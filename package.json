@@ -1,0 +1,31 @@
+{
+  "name": "cloudflare-failover-proxy",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker that provides load balancing and failover between multiple backend servers",
+  "main": "worker.js",
+  "type": "module",
+  "scripts": {
+    "dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy",
+    "deploy:prod": "npx wrangler deploy --env production",
+    "format": "prettier --write '**/*.{js,css,json,md}'",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "cloudflare",
+    "worker",
+    "failover",
+    "load-balancing",
+    "proxy"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "prettier": "^3.0.0",
+    "vitest": "^0.34.1",
+    "wrangler": "^3.6.0"
+  },
+  "engines": {
+    "node": ">=16.13.0"
+  }
+}
