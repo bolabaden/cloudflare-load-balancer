@@ -100,7 +100,7 @@ async function handleProxyRequest(request, env) {
   for (const backend of BACKENDS) {
     try {
       metrics.backendStats[backend.name].requests++;
-
+      
       // Clone the request if it might have a body that can be consumed.
       // This is crucial for retrying POST/PUT requests.
       let requestToForward = request;
@@ -119,7 +119,7 @@ async function handleProxyRequest(request, env) {
 
       // Set critical headers first
       // Host header should be the original incoming host, matching SNI for this approach
-      subRequestHeaders.set('Host', incomingUrl.hostname);
+      subRequestHeaders.set('Host', incomingUrl.hostname); 
       subRequestHeaders.set('X-Forwarded-For', requestToForward.headers.get('CF-Connecting-IP') || requestToForward.headers.get('X-Real-IP') || '');
       subRequestHeaders.set('X-Forwarded-Proto', incomingUrl.protocol.slice(0, -1));
       if (requestToForward.headers.get('CF-Connecting-IP')) {
@@ -137,15 +137,6 @@ async function handleProxyRequest(request, env) {
 
       console.log(`[PROXY] Request ${requestId}: Sub-request to ${incomingUrl.hostname} (resolving via ${backend.originHostname} to ${backend.ip}). Host header: ${subRequestHeaders.get('Host')}`);
 
-      // Log all headers being sent in the subRequest
-      let subRequestHeadersForLog = {};
-      for (let pair of subRequestHeaders.entries()) {
-        // For headers that can appear multiple times (e.g., Set-Cookie from origin, though less relevant for request),
-        // this will only log the last one. For typical request headers, it's fine.
-        subRequestHeadersForLog[pair[0].toLowerCase()] = pair[1];
-      }
-      console.log(`[PROXY] Request ${requestId}: Sub-request headers to ${backend.name}: ${JSON.stringify(subRequestHeadersForLog)}`);
-
       const subRequest = new Request(incomingUrl.toString(), {
         method: requestToForward.method, // Use method from cloned/original request
         headers: subRequestHeaders,      // Use newly constructed headers
@@ -153,11 +144,11 @@ async function handleProxyRequest(request, env) {
         redirect: requestToForward.redirect, // Use redirect from cloned/original request
         cf: {
           resolveOverride: backend.originHostname // Directs the TCP connection to the IP of this hostname
-          // SNI will be incomingUrl.hostname
-          // Host header (from subRequestHeaders) is also incomingUrl.hostname
+                               // SNI will be incomingUrl.hostname
+                               // Host header (from subRequestHeaders) is also incomingUrl.hostname
         }
       });
-
+      
       const backendStartTime = Date.now();
       const response = await fetch(subRequest);
       const backendResponseTime = Date.now() - backendStartTime;
@@ -226,17 +217,17 @@ async function testAllBackendsAndUpdateDns(env) {
     console.error("[ERROR] Missing HEALTH_CHECK_PATH environment variable for health checks.");
     return;
   }
-  // DNS variables check remains in updateDnsRecords
+   // DNS variables check remains in updateDnsRecords
 
   console.log("[INFO] Starting health checks for all backends...");
   const healthCheckPromises = BACKENDS.map(async (backend) => {
     const startTime = Date.now();
     // Health check now uses the backend.originHostname
     const healthUrl = `https://${backend.originHostname}${HEALTH_CHECK_PATH}`;
-
+    
     try {
       console.log(`[HEALTH] Checking ${backend.name} (${backend.ip}) via ${healthUrl}`);
-
+      
       const subRequestHeaders = new Headers();
       // For health checks, the Host header should match the backend.originHostname, 
       // or your backend should be configured to respond to the health check path on any Host.
@@ -299,7 +290,7 @@ async function updateDnsRecords(env) {
     console.warn(`[DNS] No healthy backends and no FALLBACK_IP. DNS records for ${DNS_RECORD_NAME} may be cleared or left as is, depending on existing records.`);
     // If desiredIPs is empty, all existing records matching DNS_RECORD_NAME will be removed.
   }
-  console.log(`[DNS] Desired IPs for ${DNS_RECORD_NAME}: ${[...desiredIPs].join(', ')} || 'NONE'`);
+   console.log(`[DNS] Desired IPs for ${DNS_RECORD_NAME}: ${[...desiredIPs].join(', ')} || 'NONE'`);
 
   const apiBase = `https://api.cloudflare.com/client/v4/zones/${DNS_ZONE_ID}/dns_records`;
   const cfApiHeaders = { Authorization: `Bearer ${DNS_API_TOKEN}`, 'Content-Type': 'application/json' };
@@ -432,11 +423,11 @@ function serveDashboard(env) {
       <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 1rem;">DNS Record for Load Balancing: <strong>${env.DNS_RECORD_NAME || "Not Configured"}</strong> (updated by schedule)</p>
       <div class="grid">
         ${BACKENDS.map(backend => {
-    const statusInfo = backendStatus[backend.name] || { status: "unknown", statusCode: 'N/A', responseTime: 'N/A', lastChecked: null, error: null };
-    const statusColor = getStatusColor(statusInfo.status);
-    const backendMetrics = metrics.backendStats[backend.name] || { requests: 0, successful: 0, avgResponseTime: 0 };
-    const backendSuccessRate = backendMetrics.requests ? Math.round((backendMetrics.successful / backendMetrics.requests) * 100) : 0;
-    return String.raw`
+          const statusInfo = backendStatus[backend.name] || { status: "unknown", statusCode: 'N/A', responseTime: 'N/A', lastChecked: null, error: null };
+          const statusColor = getStatusColor(statusInfo.status);
+          const backendMetrics = metrics.backendStats[backend.name] || { requests: 0, successful: 0, avgResponseTime: 0 };
+          const backendSuccessRate = backendMetrics.requests ? Math.round((backendMetrics.successful / backendMetrics.requests) * 100) : 0;
+          return String.raw`
             <div class="card">
               <div class="card-header">
                 <div class="card-title">${backend.name}</div>
@@ -447,7 +438,7 @@ function serveDashboard(env) {
               <div class="metric"><span class="metric-label">Last Health Check</span><span class="metric-value">${formatTime(statusInfo.lastChecked)}</span></div>
               <div class="metric"><span class="metric-label">Health Status Code</span><span class="metric-value">${statusInfo.statusCode || 'N/A'}</span></div>
               <div class="metric"><span class="metric-label">Health Latency</span><span class="metric-value">${statusInfo.responseTime !== null ? statusInfo.responseTime + 'ms' : 'N/A'}</span></div>
-              ${statusInfo.error ? `<div class="metric"><span class="metric-label">Last Error</span><span class="metric-value error-message">${statusInfo.error.substring(0, 30)}${statusInfo.error.length > 30 ? '...' : ''}</span></div>` : ''}
+              ${statusInfo.error ? `<div class="metric"><span class="metric-label">Last Error</span><span class="metric-value error-message">${statusInfo.error.substring(0,30)}${statusInfo.error.length > 30 ? '...' : ''}</span></div>` : ''}
               <div style="margin-top:1rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color);">
                  <div class="metric-label" style="font-size:0.9rem; margin-bottom:0.25rem;">Proxied Traffic by Worker:</div>
                  <div class="metric"><span class="metric-label">Requests</span><span class="metric-value">${backendMetrics.requests}</span></div>
@@ -455,26 +446,26 @@ function serveDashboard(env) {
                  <div class="metric"><span class="metric-label">Avg. Latency</span><span class="metric-value">${Math.round(backendMetrics.avgResponseTime) || 0}ms</span></div>
               </div>
             </div>`;
-  }).join("")}
+        }).join("")}
       </div>
       <h2>Recent Proxied Requests (last 10 by this worker instance)</h2>
       <div class="card" style="overflow-x: auto;">
         <table><thead><tr><th>Time</th><th>URL</th><th>Backend</th><th>Status</th><th>Latency</th></tr></thead>
           <tbody>
             ${metrics.lastRequests.map(req => {
-    const statusType = req.status === "pending" ? "pending"
-      : (req.status >= 200 && req.status < 400) ? "healthy"
-        : (req.status === "error" || req.status === "all_failed") ? "error"
-          : "unhealthy";
-    const reqStatusColor = getStatusColor(statusType);
-    return String.raw`<tr>
+              const statusType = req.status === "pending" ? "pending"
+                : (req.status >= 200 && req.status < 400) ? "healthy"
+                  : (req.status === "error" || req.status === "all_failed") ? "error"
+                    : "unhealthy";
+              const reqStatusColor = getStatusColor(statusType);
+              return String.raw`<tr>
                   <td>${formatTime(req.timestamp)}</td>
                   <td style="word-break:break-all;">${req.url}</td>
                   <td>${req.backend || "-"}</td>
-                  <td><span class="pill" style="background-color: ${reqStatusColor}22; color: ${reqStatusColor};">${req.error ? `Error: ${req.error.substring(0, 30)}${req.error.length > 30 ? '...' : ''}` : (req.status || 'N/A')}</span></td>
+                  <td><span class="pill" style="background-color: ${reqStatusColor}22; color: ${reqStatusColor};">${req.error ? `Error: ${req.error.substring(0,30)}${req.error.length > 30 ? '...' : ''}` : (req.status || 'N/A')}</span></td>
                   <td>${req.responseTime ? req.responseTime + "ms" : "-"}</td>
                 </tr>`;
-  }).join("")}
+            }).join("")}
           </tbody>
         </table>
       </div>
