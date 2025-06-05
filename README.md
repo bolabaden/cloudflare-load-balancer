@@ -68,29 +68,26 @@ The worker automatically creates separate Durable Object instances for each host
 
 ## Configuration API
 
-### View Current Configuration
+### Authentication
+All admin endpoints require a `Authorization: Bearer YOUR_API_SECRET` header.
 
+### Update Service Configuration
 ```bash
-curl -H "Authorization: Bearer YOUR_API_SECRET" \
-  https://your-worker.workers.dev/__lb_admin__/aiostreams.bolabaden.org/config
+POST /admin/services/{hostname}/config
 ```
 
-### Update Configuration
-
+**Example: Configure aiostreams.bolabaden.org**
 ```bash
-curl -X POST \
+curl -X POST https://your-worker.your-subdomain.workers.dev/admin/services/aiostreams.bolabaden.org/config \
   -H "Authorization: Bearer YOUR_API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{
     "backends": [
-      {"id": "primary", "url": "https://primary.example.com", "weight": 2},
-      {"id": "secondary", "url": "https://secondary.example.com", "weight": 1}
+      { "id": "cf", "url": "https://aiostreams-cf.bolabaden.org", "weight": 1 },
+      { "id": "koyeb", "url": "https://aiostreams-koyeb.bolabaden.org", "weight": 1 },
+      { "id": "duckdns", "url": "https://aiostreams.bolabaden.duckdns.org", "weight": 1 }
     ],
-    "sessionAffinity": {
-      "type": "cookie",
-      "cookieName": "lb_backend",
-      "cookieTTLSeconds": 3600
-    },
+    "sessionAffinity": { "type": "ip" },
     "passiveHealthChecks": {
       "maxFailures": 3,
       "failureTimeoutMs": 30000,
@@ -98,15 +95,49 @@ curl -X POST \
     },
     "activeHealthChecks": {
       "enabled": true,
-      "path": "/health",
-      "intervalMs": 30000,
+      "path": "/healthz",
+      "intervalMs": 60000,
       "timeoutMs": 5000,
       "expectedStatusCode": 200
     },
-    "retryPolicy": {"maxRetries": 2},
+    "retryPolicy": { "maxRetries": 2 },
     "hostHeaderRewrite": "preserve"
-  }' \
-  https://your-worker.workers.dev/__lb_admin__/aiostreams.bolabaden.org/config
+  }'
+```
+
+**Example: Configure dozzle.bolabaden.org**
+```bash
+curl -X POST https://your-worker.your-subdomain.workers.dev/admin/services/dozzle.bolabaden.org/config \
+  -H "Authorization: Bearer YOUR_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backends": [
+      { "id": "main", "url": "https://dozzle.bolabaden.org", "weight": 2 },
+      { "id": "backup", "url": "https://dozzle-koyeb.bolabaden.org", "weight": 1 },
+      { "id": "fallback", "url": "https://dozzle.micklethefickle.duckdns.org", "weight": 1 }
+    ],
+    "sessionAffinity": { "type": "cookie", "cookieName": "dozzle_backend" },
+    "activeHealthChecks": {
+      "enabled": true,
+      "path": "/api/health",
+      "intervalMs": 45000
+    }
+  }'
+```
+
+### Get Service Configuration
+```bash
+GET /admin/services/{hostname}/config
+```
+
+### Get Service Metrics (JSON)
+```bash
+GET /admin/services/{hostname}/metrics
+```
+
+### Get Service Metrics (HTML Dashboard)
+```bash
+GET /admin/services/{hostname}/metrics/dashboard
 ```
 
 ### Configuration Options
@@ -144,53 +175,30 @@ curl -X POST \
 
 ## Metrics Dashboard
 
-### HTML Dashboard
-
-```bash
-curl -H "Authorization: Bearer YOUR_API_SECRET" \
-  https://your-worker.workers.dev/__lb_metrics__/aiostreams.bolabaden.org/html
-```
-
-### JSON Metrics
-
-```bash
-curl -H "Authorization: Bearer YOUR_API_SECRET" \
-  https://your-worker.workers.dev/__lb_metrics__/aiostreams.bolabaden.org/json
-```
+Access real-time metrics for any configured service:
+- **JSON**: `https://your-worker.your-subdomain.workers.dev/admin/services/{hostname}/metrics`
+- **HTML Dashboard**: `https://your-worker.your-subdomain.workers.dev/admin/services/{hostname}/metrics/dashboard`
 
 The dashboard shows:
-
-- Total requests processed
-- Success/failure rates per backend
-- Average response times
-- Current backend health status
-- Recent failure timestamps
+- Backend health status and response times
+- Request distribution across backends
+- Success/failure rates
+- Live configuration details
+- Historical failure timestamps
 
 ## Adding New Services
 
-To add a new service (e.g., `dozzle.bolabaden.org`):
+To add a new service (e.g., `newapp.example.com`):
 
-1. **Set up DNS** to point to your worker
-2. **Configure backends**:
+1. **Configure the service** via API (see examples above)
+2. **Point DNS** to your worker
+3. **Access the service** - the worker automatically creates a new Durable Object instance
 
-```bash
-curl -X POST \
-  -H "Authorization: Bearer YOUR_API_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "backends": [
-      {"id": "dozzle-main", "url": "https://dozzle-main.example.com"},
-      {"id": "dozzle-backup", "url": "https://dozzle-backup.example.com"}
-    ],
-    "sessionAffinity": {"type": "ip"},
-    "activeHealthChecks": {
-      "enabled": true,
-      "path": "/",
-      "intervalMs": 60000
-    }
-  }' \
-  https://your-worker.workers.dev/__lb_admin__/dozzle.bolabaden.org/config
-```
+Each service operates completely independently with its own:
+- Backend configuration
+- Health check settings
+- Session affinity rules
+- Metrics and monitoring
 
 ## WebSocket Support
 
