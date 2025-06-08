@@ -38,9 +38,10 @@ A sophisticated load balancer built on Cloudflare Workers that features OAuth au
 ### 1. Clone and Install
 
 ```bash
-git clone <your-repo>
+git clone https://github.com/th3w1zard1/cloudflare-failover-test
 cd cloudflare-failover-test
 npm install
+npm run deploy
 ```
 
 ### 2. Configure OAuth Applications
