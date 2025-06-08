@@ -5,6 +5,22 @@ declare namespace Cloudflare {
 	interface Env {
 		LOAD_BALANCER_DO: DurableObjectNamespace<import("./src/durable-object").LoadBalancerDO>;
 		API_SECRET: string;
+		WEB_AUTH_USERNAME: string;
+		WEB_AUTH_PASSWORD: string;
+		ENABLE_WEB_INTERFACE: string;
+		DEFAULT_BACKENDS: string;
+		DEBUG: string;
+		ENVIRONMENT: string;
+		CLOUDFLARE_API_KEY: string;
+		CLOUDFLARE_API_TOKEN: string;
+		CLOUDFLARE_EMAIL: string;
+		CLOUDFLARE_ZONE_ID: string;
+		AUTHORIZED_USERS: string;
+		GITHUB_CLIENT_ID: string;
+		GITHUB_CLIENT_SECRET: string;
+		GOOGLE_CLIENT_ID: string;
+		GOOGLE_CLIENT_SECRET: string;
+		JWT_SECRET: string;
 	}
 }
 interface Env extends Cloudflare.Env {}

@@ -3,15 +3,16 @@
   "version": "1.0.0",
   "description": "Cloudflare Worker for load balancing with session affinity and dynamic backends.",
   "scripts": {
-    "build": "wrangler build",
-    "deploy": "wrangler deploy",
+    "build": "npm run build:static && wrangler build",
+    "build:static": "node build-static.js",
+    "deploy": "npm run build:static && wrangler deploy",
     "dev": "wrangler dev",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YOUR_USERNAME/cloudflare-failover-test.git"
+    "url": "git+https://github.com/th3w1zard1/cloudflare-failover-test.git"
   },
   "author": "",
   "license": "MIT",
@@ -24,9 +25,11 @@
     "eslint-plugin-prettier": "^5.1.3",
     "prettier": "^3.2.5",
     "typescript": "^5.4.5",
-    "wrangler": "^3.50.0"
+    "wrangler": "^4.19.1"
   },
   "dependencies": {
-    "itty-router": "^4.0.23"
+    "@tsndr/cloudflare-worker-jwt": "^2.4.0",
+    "itty-router": "^4.0.23",
+    "pkce-challenge": "^4.1.0"
   }
 }

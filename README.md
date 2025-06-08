@@ -1,390 +1,357 @@
-# Cloudflare Workers Load Balancer
+# Cloudflare Load Balancer Worker with OAuth Authentication
 
-A enterprise-grade, multi-service load balancer built with Cloudflare Workers and Durable Objects. Provides dynamic backend configuration, session affinity, health checking, and real-time metrics - all without requiring redeployment.
+A sophisticated load balancer built on Cloudflare Workers that features OAuth authentication (GitHub/Google), a modern web interface, and dynamic backend configuration. Each service is managed by a separate Durable Object instance for high availability and performance.
 
-## Features
+## ✨ Features
 
-- **Multi-Service Support**: Handle load balancing for unlimited services/domains from a single worker deployment
-- **Dynamic Configuration**: Add, remove, and configure backends via secure API calls - no redeployment needed
-- **Load Balancing Algorithms**:
-  - Round-robin (default)
-  - Weighted round-robin
-  - Session affinity (IP-based or cookie-based)
-- **Health Monitoring**:
-  - Passive health checks (based on request failures)
-  - Active health checks (periodic probes to `/healthz` or custom endpoints)
-  - Automatic backend revival after failure timeout
-- **Advanced Proxying**:
-  - WebSocket support
-  - Intelligent retry logic for non-idempotent methods
-  - Header forwarding and manipulation
-  - Configurable Host header rewriting
-- **Real-time Metrics**: Human-friendly dashboard showing backend health, request counts, response times, and failure rates
-- **Secure API**: Protected configuration API for runtime updates
-- **Industry Standards**: Follows nginx-style configuration patterns and load balancing best practices
+### 🔐 Authentication
 
-## Quick Start
+- **OAuth Integration**: Sign in with GitHub or Google
+- **JWT Sessions**: Secure, stateless authentication
+- **Basic Auth Fallback**: Backward compatibility for API access
+- **Authorized Users**: Configurable email whitelist
 
-### 1. Deploy to Cloudflare Workers
+### 🌐 Web Interface
 
-```bash
-# Set your API secret (use a strong random value)
-wrangler secret put API_SECRET
+- **Modern UI**: Beautiful, responsive design
+- **Real-time Monitoring**: Live backend health status
+- **Configuration Management**: Add/edit services through the web
+- **Metrics Dashboard**: Request statistics and success rates
 
-# Deploy the worker
-wrangler deploy
-```
+### ⚖️ Load Balancing
 
-### 2. Configure Your First Service
+- **Multiple Services**: Support for multiple hostnames
+- **Session Affinity**: IP hash, cookie-based, or none
+- **Health Checks**: Active and passive monitoring
+- **Failover**: Automatic backend switching
+- **Weighted Round Robin**: Configurable backend weights
 
-**Important**: The worker starts with NO pre-configured services. You must configure each service via the API before it can handle traffic.
+### 🔧 API
+
+- **RESTful API**: Complete configuration management
+- **Real-time Updates**: Changes take effect immediately
+- **Metrics Export**: JSON and HTML formats
+- **Bearer Token Auth**: Secure API access
+
+## 🚀 Quick Start
+
+### 1. Clone and Install
 
 ```bash
-# Example: Configure backends for example.com
-curl -X POST https://your-worker.your-subdomain.workers.dev/admin/services/example.com/config \
-  -H "Authorization: Bearer YOUR_API_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "backends": [
-      { "id": "primary", "url": "https://backend1.example.com", "weight": 1 },
-      { "id": "secondary", "url": "https://backend2.example.com", "weight": 1 }
-    ],
-    "sessionAffinity": { "type": "ip" },
-    "activeHealthChecks": {
-      "enabled": true,
-      "path": "/health",
-      "intervalMs": 30000
-    }
-  }'
+git clone <your-repo>
+cd cloudflare-failover-test
+npm install
 ```
 
-### 3. Route Traffic
+### 2. Configure OAuth Applications
 
-Point your domain's DNS to the worker:
-- **DNS A/AAAA Record**: Point to Cloudflare Worker custom domain, OR
-- **DNS CNAME**: Point to `your-worker.your-subdomain.workers.dev`
+#### GitHub OAuth App
 
-The worker automatically creates separate Durable Object instances for each hostname, ensuring complete isolation between services.
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+2. Click "New OAuth App"
+3. Set Authorization callback URL to: `https://your-worker.your-subdomain.workers.dev/auth/github/callback`
+4. Note the Client ID and Client Secret
 
-## Configuration API
+#### Google OAuth App  
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Create a new OAuth 2.0 Client ID
+3. Set Authorized redirect URI to: `https://your-worker.your-subdomain.workers.dev/auth/google/callback`
+4. Note the Client ID and Client Secret
+
+### 3. Update Configuration
+
+Edit `wrangler.toml` and update the environment variables:
+
+```toml
+[vars]
+# OAuth Configuration
+JWT_SECRET = "your-super-secret-jwt-key-change-this-in-production"
+GITHUB_CLIENT_ID = "your-github-oauth-app-client-id"
+GITHUB_CLIENT_SECRET = "your-github-oauth-app-client-secret"
+GOOGLE_CLIENT_ID = "your-google-oauth-client-id"
+GOOGLE_CLIENT_SECRET = "your-google-oauth-client-secret"
+AUTHORIZED_USERS = "your-email@example.com,another-user@example.com"
+
+# API Configuration
+API_SECRET = "your-api-secret-key"
+WEB_AUTH_USERNAME = "admin"
+WEB_AUTH_PASSWORD = "admin123"
+
+# Load Balancer Configuration
+DEFAULT_BACKENDS = "example.com|https://backend1.com|https://backend2.com"
+ENABLE_WEB_INTERFACE = "true"
+```
+
+### 4. Deploy
+
+```bash
+npm run deploy
+```
+
+### 5. Access the Web Interface
+
+Navigate to `https://your-worker.your-subdomain.workers.dev` and sign in with GitHub or Google!
+
+## 🖥️ Web Interface
+
+### Login Page
+
+- OAuth buttons for GitHub and Google
+- Basic auth fallback
+- Modern, responsive design
+- Clear error messaging
+
+### Dashboard
+
+- Service management interface
+- Real-time health monitoring
+- Add new services
+- View metrics and statistics
+- Global configuration overview
+- API documentation
+
+### Features
+
+- **Service Management**: Add, configure, and monitor services
+- **Backend Control**: Enable/disable individual backends
+- **Health Checks**: Manual and automatic health verification
+- **Metrics**: Request counts, success rates, response times
+- **Configuration**: Session affinity, health check settings
+
+## 🔌 API Reference
 
 ### Authentication
-All admin endpoints require a `Authorization: Bearer YOUR_API_SECRET` header.
 
-### Update Service Configuration
+All API calls require authentication:
+
 ```bash
+# OAuth (via web interface)
+Cookie: auth_token=<jwt-token>
+
+# Basic Auth (legacy)
+Authorization: Basic <base64-encoded-credentials>
+
+# Bearer Token (API)
+Authorization: Bearer <api-secret>
+```
+
+### Service Configuration
+
+```bash
+# Configure a service
 POST /admin/services/{hostname}/config
-```
+Content-Type: application/json
 
-**Example: Configure aiostreams.bolabaden.org**
-```bash
-curl -X POST https://your-worker.your-subdomain.workers.dev/admin/services/aiostreams.bolabaden.org/config \
-  -H "Authorization: Bearer YOUR_API_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "backends": [
-      { "id": "cf", "url": "https://aiostreams-cf.bolabaden.org", "weight": 1 },
-      { "id": "koyeb", "url": "https://aiostreams-koyeb.bolabaden.org", "weight": 1 },
-      { "id": "duckdns", "url": "https://aiostreams.bolabaden.duckdns.org", "weight": 1 }
-    ],
-    "sessionAffinity": { "type": "ip" },
-    "passiveHealthChecks": {
-      "maxFailures": 3,
-      "failureTimeoutMs": 30000,
-      "retryableStatusCodes": [500, 502, 503, 504]
-    },
-    "activeHealthChecks": {
-      "enabled": true,
-      "path": "/healthz",
-      "intervalMs": 60000,
-      "timeoutMs": 5000,
-      "expectedStatusCode": 200
-    },
-    "retryPolicy": { "maxRetries": 2 },
-    "hostHeaderRewrite": "preserve"
-  }'
-```
-
-**Example: Configure dozzle.bolabaden.org**
-```bash
-curl -X POST https://your-worker.your-subdomain.workers.dev/admin/services/dozzle.bolabaden.org/config \
-  -H "Authorization: Bearer YOUR_API_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "backends": [
-      { "id": "main", "url": "https://dozzle.bolabaden.org", "weight": 2 },
-      { "id": "backup", "url": "https://dozzle-koyeb.bolabaden.org", "weight": 1 },
-      { "id": "fallback", "url": "https://dozzle.micklethefickle.duckdns.org", "weight": 1 }
-    ],
-    "sessionAffinity": { "type": "cookie", "cookieName": "dozzle_backend" },
-    "activeHealthChecks": {
-      "enabled": true,
-      "path": "/api/health",
-      "intervalMs": 45000
+{
+  "backends": [
+    {
+      "id": "backend1",
+      "url": "https://backend1.example.com",
+      "weight": 1,
+      "healthy": true
     }
-  }'
+  ],
+  "sessionAffinity": {
+    "type": "ip",
+    "enabled": true
+  },
+  "activeHealthChecks": {
+    "enabled": true,
+    "path": "/health",
+    "intervalMs": 30000
+  }
+}
 ```
 
-### Get Service Configuration
-```bash
-GET /admin/services/{hostname}/config
-```
+### Get Service Metrics
 
-### Get Service Metrics (JSON)
 ```bash
+# JSON format
 GET /admin/services/{hostname}/metrics
-```
 
-### Get Service Metrics (HTML Dashboard)
-```bash
+# HTML dashboard
 GET /admin/services/{hostname}/metrics/dashboard
 ```
 
-### Configuration Options
+### Backend Management
 
-- **backends**: Array of backend servers
-  - `id`: Unique identifier
-  - `url`: Full URL to the backend
-  - `weight`: Weight for weighted round-robin (default: 1)
-  - `healthy`: Current health status (managed automatically)
+```bash
+# Enable/disable backend
+POST /admin/services/{hostname}/backends/{backendId}/enable
+POST /admin/services/{hostname}/backends/{backendId}/disable
 
-- **sessionAffinity**: Session stickiness configuration
-  - `type`: `"none"`, `"cookie"`, or `"ip"`
-  - `cookieName`: Cookie name for cookie-based affinity
-  - `cookieTTLSeconds`: Cookie TTL in seconds
+# Manual health check
+POST /admin/services/{hostname}/health-check
+```
 
-- **passiveHealthChecks**: Failure-based health monitoring
-  - `maxFailures`: Max consecutive failures before marking unhealthy
-  - `failureTimeoutMs`: How long to wait before retrying an unhealthy backend
-  - `retryableStatusCodes`: HTTP status codes that trigger retries
+## 🛠️ Configuration
 
-- **activeHealthChecks**: Proactive health monitoring
-  - `enabled`: Enable/disable active checks
-  - `path`: Health check endpoint path
-  - `intervalMs`: Time between health checks
-  - `timeoutMs`: Request timeout for health checks
-  - `expectedStatusCode`: Expected HTTP status code (default: 200)
+### Environment Variables
 
-- **retryPolicy**: Request retry configuration
-  - `maxRetries`: Maximum retry attempts for failed requests
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `JWT_SECRET` | Secret key for JWT signing | Yes |
+| `GITHUB_CLIENT_ID` | GitHub OAuth app client ID | Yes |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth app client secret | Yes |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID | Yes |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | Yes |
+| `AUTHORIZED_USERS` | Comma-separated list of authorized emails | Yes |
+| `API_SECRET` | Bearer token for API access | Yes |
+| `WEB_AUTH_USERNAME` | Basic auth username (fallback) | No |
+| `WEB_AUTH_PASSWORD` | Basic auth password (fallback) | No |
+| `DEFAULT_BACKENDS` | Default backend configuration | No |
+| `ENABLE_WEB_INTERFACE` | Enable web interface (true/false) | No |
 
-- **hostHeaderRewrite**: How to handle the Host header
-  - `"preserve"`: Keep original Host header
-  - `"backend_hostname"`: Use backend's hostname
-  - Custom string: Use specific value
+### Service Configuration Schema
 
-## Metrics Dashboard
+```typescript
+interface ServiceConfig {
+  backends: Backend[];
+  sessionAffinity: {
+    type: 'none' | 'ip' | 'cookie';
+    enabled: boolean;
+    cookieName?: string;
+    cookieTTLSeconds?: number;
+  };
+  activeHealthChecks: {
+    enabled: boolean;
+    path: string;
+    intervalMs: number;
+    timeoutMs: number;
+    expectedStatusCode?: number;
+  };
+  passiveHealthChecks: {
+    maxFailures: number;
+    failureTimeoutMs: number;
+    retryableStatusCodes: number[];
+  };
+  retryPolicy: {
+    maxRetries: number;
+  };
+}
+```
 
-Access real-time metrics for any configured service:
-- **JSON**: `https://your-worker.your-subdomain.workers.dev/admin/services/{hostname}/metrics`
-- **HTML Dashboard**: `https://your-worker.your-subdomain.workers.dev/admin/services/{hostname}/metrics/dashboard`
+## 🔒 Security
 
-The dashboard shows:
-- Backend health status and response times
-- Request distribution across backends
+### OAuth Flow
+
+1. User clicks OAuth provider button
+2. Redirected to provider for authorization
+3. Provider redirects back with authorization code
+4. Worker exchanges code for user information
+5. User email checked against authorized list
+6. JWT token created and set as secure cookie
+
+### JWT Tokens
+
+- 24-hour expiration
+- HttpOnly, Secure, SameSite=Strict cookies
+- Include user information and expiration time
+- Signed with JWT_SECRET
+
+### Authorization Levels
+
+1. **OAuth Users**: Full web interface access (if email authorized)
+2. **Basic Auth**: Legacy web interface access
+3. **Bearer Token**: Full API access
+4. **No Auth**: Public load balancing (backend services)
+
+## 📊 Monitoring
+
+### Built-in Metrics
+
+- Total requests per service
 - Success/failure rates
-- Live configuration details
-- Historical failure timestamps
+- Backend-specific statistics
+- Response times
+- Health check results
 
-## Adding New Services
+### Web Dashboard
 
-To add a new service (e.g., `newapp.example.com`):
+- Real-time health status
+- Service overview cards
+- Backend management interface
+- Historical metrics (coming soon)
 
-1. **Configure the service** via API (see examples above)
-2. **Point DNS** to your worker
-3. **Access the service** - the worker automatically creates a new Durable Object instance
+## 🚦 Load Balancing
 
-Each service operates completely independently with its own:
-- Backend configuration
-- Health check settings
-- Session affinity rules
-- Metrics and monitoring
+### Algorithms
 
-## WebSocket Support
+- **Round Robin**: Default algorithm
+- **Weighted Round Robin**: Based on backend weights
+- **Session Affinity**: Sticky sessions via IP or cookie
 
-The load balancer automatically handles WebSocket upgrade requests and forwards them to the appropriate backend while maintaining session affinity.
+### Health Checks
 
-## Security
+- **Active**: Periodic health endpoint checks
+- **Passive**: Based on request success/failure
+- **Configurable**: Custom paths, intervals, timeouts
 
-- API endpoints are protected with Bearer token authentication
-- Admin/metrics paths use unique prefixes (`/__lb_admin__/`, `/__lb_metrics__/`) that won't conflict with your applications
-- Request validation prevents open proxy attacks
+### Failover
 
-## Monitoring and Debugging
+- Automatic backend disabling on consecutive failures
+- Configurable failure thresholds
+- Automatic re-enabling after recovery period
 
-The worker provides extensive logging:
+## 🛠️ Development
 
-- Request routing decisions
-- Backend health changes
-- Retry attempts and failures
-- Performance metrics
+### Local Development
 
-Check your Cloudflare Workers logs for detailed information about load balancer behavior.
+```bash
+# Start development server
+npm run dev
 
-## Nginx Configuration Compatibility
+# Type checking
+npm run typecheck
 
-This implementation replicates the behavior of the provided `nginx.conf`:
-
-- IP-based session affinity (equivalent to `ip_hash`)
-- Passive health checks (equivalent to `max_fails` and `fail_timeout`)
-- Retry logic (equivalent to `proxy_next_upstream`)
-- Header forwarding (`X-Forwarded-For`, `X-Real-IP`, etc.)
-
-## Development
+# Linting
+npm run lint
+```
 
 ### Project Structure
 
 ```
 src/
 ├── index.ts           # Main worker entry point
-├── durable-object.ts  # Load balancer logic and state management
-└── types.ts          # TypeScript interfaces
-
-wrangler.jsonc        # Cloudflare Workers configuration
+├── auth.ts           # OAuth and JWT authentication
+├── frontend.ts       # Modern web interface
+├── web-interface.ts  # Legacy web interface
+├── durable-object.ts # Load balancer logic
+├── config.ts         # Configuration management
+├── types.ts          # TypeScript types
+└── env.d.ts          # Environment type definitions
 ```
 
-### Local Development
+## 📋 TODO
 
-```bash
-# Install dependencies
-npm install
+- [ ] Historical metrics storage
+- [ ] Advanced routing rules
+- [ ] Rate limiting
+- [ ] SSL certificate management
+- [ ] Multi-region support
+- [ ] Webhooks for health status changes
+- [ ] API key management
+- [ ] Audit logging
 
-# Start local development server
-wrangler dev
+## 🤝 Contributing
 
-# Test with local configuration
-curl -H "Authorization: Bearer bc0d037f84a54300811498e705716b6ed601f52209524a06b1eaa668904f60bc" \
-  http://localhost:8787/__lb_metrics__/aiostreams.bolabaden.org/html
-```
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
-## TODO Checklist
+## 📄 License
 
-All major TODO items have been implemented:
+MIT License - see LICENSE file for details.
 
-- ✅ Round-robin algorithm with weighted support
-- ✅ Session stickiness (IP and cookie-based)
-- ✅ Comprehensive request proxying with WebSocket support
-- ✅ Durable Object state management
-- ✅ Dynamic backend management
-- ✅ Worker consistency across instances
-- ✅ Intelligent timeout and retry handling
-- ✅ Comprehensive observability
-- ✅ Graceful failover with health tracking
+## 🆘 Support
 
-## License
+- Check the API documentation in the web interface
+- Review the configuration examples
+- Open an issue for bug reports or feature requests
 
-This project is open source. See LICENSE file for details.
+---
 
-curl -H "Authorization: Bearer YOUR_API_SECRET" \
-  https://your-worker.workers.dev/__lb_metrics__/aiostreams.bolabaden.org/json
-```
-
-The dashboard shows:
-
-- Total requests processed
-- Success/failure rates per backend
-- Average response times
-- Current backend health status
-- Recent failure timestamps
-
-## Adding New Services
-
-To add a new service (e.g., `dozzle.bolabaden.org`):
-
-1. **Set up DNS** to point to your worker
-2. **Configure backends**:
-
-```bash
-curl -X POST \
-  -H "Authorization: Bearer YOUR_API_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "backends": [
-      {"id": "dozzle-main", "url": "https://dozzle-main.example.com"},
-      {"id": "dozzle-backup", "url": "https://dozzle-backup.example.com"}
-    ],
-    "sessionAffinity": {"type": "ip"},
-    "activeHealthChecks": {
-      "enabled": true,
-      "path": "/",
-      "intervalMs": 60000
-    }
-  }' \
-  https://your-worker.workers.dev/__lb_admin__/dozzle.bolabaden.org/config
-```
-
-## WebSocket Support
-
-The load balancer automatically handles WebSocket upgrade requests and forwards them to the appropriate backend while maintaining session affinity.
-
-## Security
-
-- API endpoints are protected with Bearer token authentication
-- Admin/metrics paths use unique prefixes (`/__lb_admin__/`, `/__lb_metrics__/`) that won't conflict with your applications
-- Request validation prevents open proxy attacks
-
-## Monitoring and Debugging
-
-The worker provides extensive logging:
-
-- Request routing decisions
-- Backend health changes
-- Retry attempts and failures
-- Performance metrics
-
-Check your Cloudflare Workers logs for detailed information about load balancer behavior.
-
-## Nginx Configuration Compatibility
-
-This implementation replicates the behavior of the provided `nginx.conf`:
-
-- IP-based session affinity (equivalent to `ip_hash`)
-- Passive health checks (equivalent to `max_fails` and `fail_timeout`)
-- Retry logic (equivalent to `proxy_next_upstream`)
-- Header forwarding (`X-Forwarded-For`, `X-Real-IP`, etc.)
-
-## Development
-
-### Project Structure
-
-```
-src/
-├── index.ts           # Main worker entry point
-├── durable-object.ts  # Load balancer logic and state management
-└── types.ts          # TypeScript interfaces
-
-wrangler.jsonc        # Cloudflare Workers configuration
-```
-
-### Local Development
-
-```bash
-# Install dependencies
-npm install
-
-# Start local development server
-wrangler dev
-
-# Test with local configuration
-curl -H "Authorization: Bearer bc0d037f84a54300811498e705716b6ed601f52209524a06b1eaa668904f60bc" \
-  http://localhost:8787/__lb_metrics__/aiostreams.bolabaden.org/html
-```
-
-## TODO Checklist
-
-All major TODO items have been implemented:
-
-- ✅ Round-robin algorithm with weighted support
-- ✅ Session stickiness (IP and cookie-based)
-- ✅ Comprehensive request proxying with WebSocket support
-- ✅ Durable Object state management
-- ✅ Dynamic backend management
-- ✅ Worker consistency across instances
-- ✅ Intelligent timeout and retry handling
-- ✅ Comprehensive observability
-- ✅ Graceful failover with health tracking
-
-## License
-
-This project is open source. See LICENSE file for details.
->>>>>>> d39a924 (Initial Commit)
+**Note**: Remember to keep your OAuth secrets and JWT secret secure. Never commit them to version control. Use Cloudflare Workers secrets or environment variables for production deployments.

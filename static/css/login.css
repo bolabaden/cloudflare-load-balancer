@@ -1,0 +1,172 @@
+* { 
+    margin: 0; 
+    padding: 0; 
+    box-sizing: border-box; 
+}
+
+body { 
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+    background: linear-gradient(135deg, #667EEA 0%, #764BA2 100%);
+    color: #333; 
+    line-height: 1.6; 
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-container {
+    background: white;
+    border-radius: 12px;
+    padding: 40px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+}
+
+.logo {
+    font-size: 48px;
+    margin-bottom: 20px;
+}
+
+h1 {
+    color: #2D3748;
+    margin-bottom: 10px;
+    font-size: 24px;
+}
+
+.subtitle {
+    color: #718096;
+    margin-bottom: 30px;
+}
+
+.oauth-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 12px 20px;
+    margin-bottom: 15px;
+    border: 2px solid #E2E8F0;
+    border-radius: 8px;
+    background: white;
+    color: #2D3748;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.oauth-button:hover {
+    border-color: #CBD5E0;
+    background: #F7FAFC;
+    transform: translateY(-1px);
+}
+
+.oauth-button img {
+    width: 20px;
+    height: 20px;
+    margin-right: 12px;
+}
+
+.github-button {
+    background: #24292E;
+    color: white;
+    border-color: #24292E;
+}
+
+.github-button:hover {
+    background: #1A1E22;
+    border-color: #1A1E22;
+    color: white;
+}
+
+.google-button {
+    border-color: #4285F4;
+}
+
+.google-button:hover {
+    border-color: #3367D6;
+}
+
+.divider {
+    margin: 25px 0;
+    position: relative;
+    text-align: center;
+}
+
+.divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #E2E8F0;
+}
+
+.divider span {
+    background: white;
+    padding: 0 15px;
+    color: #718096;
+    font-size: 14px;
+}
+
+.basic-auth-form {
+    text-align: left;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    color: #2D3748;
+}
+
+input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #E2E8F0;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+input[type="text"]:focus, input[type="password"]:focus {
+    outline: none;
+    border-color: #4299E1;
+}
+
+.login-button {
+    width: 100%;
+    padding: 12px;
+    background: #4299E1;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.login-button:hover {
+    background: #3182CE;
+}
+
+.error {
+    background: #FED7D7;
+    color: #C53030;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+
+.info {
+    color: #718096;
+    font-size: 12px;
+    margin-top: 20px;
+} 

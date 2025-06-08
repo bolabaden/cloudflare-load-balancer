@@ -7,6 +7,19 @@
 	"name": "cloudflare-loadbalancer-worker",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-06-05",
+	"minify": true,
+	
+	/**
+	 * Cron Triggers
+	 * Run health checks every 5 minutes
+	 */
+	"triggers": {
+		"crons": ["*/5 * * * *"]
+	},
+
+	/**
+	 * Database Migrations
+	 */
 	"migrations": [
 		{
 			"new_sqlite_classes": [
@@ -15,9 +28,17 @@
 			"tag": "v1"
 		}
 	],
+
+	/**
+	 * Observability
+	 */
 	"observability": {
-		"enabled": true
+		"enabled": true,
+		"logs": {
+			"enabled": true
+		}
 	},
+
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
@@ -40,12 +61,56 @@
 	},
 
 	/**
-	 * Environment Variables
+	 * Environment Variables (Global Defaults)
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
 	"vars": {
-		"API_SECRET": "bc0d037f84a54300811498e705716b6ed601f52209524a06b1eaa668904f60bc"
+		"API_SECRET": "bc0d037f84a54300811498e705716b6ed601f52209524a06b1eaa668904f60bc",
+		"AUTHORIZED_USERS": "boden.crouch@gmail.com,halomastar@gmail.com",
+		"CLOUDFLARE_API_KEY": "34a4d9943975b89dd2430870ce146f26aa5bf",
+		"CLOUDFLARE_API_TOKEN": "InPh1B7EmFCqAUbG2STUs5sGRyzIY266-sRK0CWy",
+		"CLOUDFLARE_EMAIL": "boden.crouch@gmail.com",
+		"CLOUDFLARE_ZONE_ID": "164c8d72507295b51851d9b05f0e37a1",
+		"DEBUG": "false",
+		"DEFAULT_BACKENDS": "aiostreams.bolabaden.org|https://aiostreams.bolabaden.duckdns.org,https://aiostreams-koyeb.bolabaden.org,https://aiostreams-render.bolabaden.org",
+		"ENABLE_WEB_INTERFACE": "true",
+		"ENVIRONMENT": "production",
+		"GITHUB_CLIENT_ID": "Ov23liVNzc4KAx7A3cJt",
+		"GITHUB_CLIENT_SECRET": "fd99986109daefbf44fea6505f21a51808d96a0f",
+		"GOOGLE_CLIENT_ID": "324816055390-iqvdnign16jfg5cmqfodi4dtoaum1esl.apps.googleusercontent.com",
+		"GOOGLE_CLIENT_SECRET": "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",
+		"JWT_SECRET": "5c1f92013bf94fb19bfd9ec2528c78cf239014a188784c92aff70a90cb7e0aa2",
+		"WEB_AUTH_PASSWORD": "loadbalancer2024!",
+		"WEB_AUTH_USERNAME": "admin"
 	},
+
+	/**
+	 * Environment-specific configurations
+	 */
+	"env": {
+		"dev": {
+			"name": "cloudflare-loadbalancer-worker-dev"
+			// Uses all global vars by default, no overrides needed
+		},
+		"production": {
+			"name": "cloudflare-loadbalancer-worker",
+			"routes": [
+				{
+					"pattern": "aiostreams.bolabaden.org/*",
+					"zone_name": "bolabaden.org"
+				},
+				{
+					"pattern": "*.bolabaden.org/*",
+					"zone_name": "bolabaden.org"
+				}
+			],
+			"vars": {
+				// Only override variables that differ from global defaults
+				"ENVIRONMENT": "production"
+			}
+		}
+	}
+
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
