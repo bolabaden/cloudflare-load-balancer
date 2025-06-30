@@ -10,6 +10,7 @@ import {
 	OAuthUser 
 } from "./auth";
 import { generateLoginPage, generateWebInterface, serveStaticFile } from "./static-files-generated";
+import { parseDefaultBackends } from './config';
 
 /**
  * Cloudflare Workers Load Balancer with OAuth Authentication
@@ -99,13 +100,12 @@ export default {
 		
 		// Run health checks for all configured services
 		if (env.DEFAULT_BACKENDS) {
-			const entries = env.DEFAULT_BACKENDS.split(',');
-			for (const entry of entries) {
-				const [hostname] = entry.split('|');
+			const groups = parseDefaultBackends(env.DEFAULT_BACKENDS);
+			for (const group of groups) {
+				const { hostname } = group;
 				if (hostname) {
-					const trimmedHostname = hostname.trim();
 					try {
-						const doId = env.LOAD_BALANCER_DO.idFromName(trimmedHostname);
+						const doId = env.LOAD_BALANCER_DO.idFromName(hostname);
 						const stub = env.LOAD_BALANCER_DO.get(doId);
 						
 						// Trigger health check
@@ -115,9 +115,9 @@ export default {
 						});
 						
 						ctx.waitUntil(stub.fetch(healthCheckRequest));
-						console.log(`[Scheduled] Triggered health check for ${trimmedHostname}`);
+						console.log(`[Scheduled] Triggered health check for ${hostname}`);
 					} catch (error) {
-						console.error(`[Scheduled] Failed to trigger health check for ${trimmedHostname}:`, error);
+						console.error(`[Scheduled] Failed to trigger health check for ${hostname}:`, error);
 					}
 				}
 			}
@@ -336,19 +336,16 @@ async function handleListServices(env: Env): Promise<Response> {
 		
 		// Parse default backends from environment
 		if (env.DEFAULT_BACKENDS) {
-			const defaultBackends = env.DEFAULT_BACKENDS.split(',');
-			for (const backendEntry of defaultBackends) {
-				const [hostname, ...urls] = backendEntry.split('|');
-				if (hostname && urls.length > 0) {
-					const cleanHostname = hostname.trim();
-					const cleanUrls = urls.map(url => url.trim());
-					
-					services[cleanHostname] = {
+			const groups = parseDefaultBackends(env.DEFAULT_BACKENDS);
+			for (const group of groups) {
+				const { hostname, backends } = group;
+				if (hostname && backends.length > 0) {
+					services[hostname] = {
 						mode: 'simple',
-						backends: cleanUrls,
+						backends: backends,
 						source: 'default',
-						hostname: cleanHostname,
-						backendCount: cleanUrls.length,
+						hostname: hostname,
+						backendCount: backends.length,
 						status: 'active',
 						metrics: {
 							totalRequests: 0,
@@ -359,7 +356,7 @@ async function handleListServices(env: Env): Promise<Response> {
 					
 					// Try to get actual metrics from the DO if it exists
 					try {
-						const doId = env.LOAD_BALANCER_DO.idFromName(cleanHostname);
+						const doId = env.LOAD_BALANCER_DO.idFromName(hostname);
 						const stub = env.LOAD_BALANCER_DO.get(doId);
 						const metricsRequest = new Request('https://dummy/__lb_admin__/metrics', {
 							method: 'GET'
@@ -368,12 +365,12 @@ async function handleListServices(env: Env): Promise<Response> {
 						
 						if (metricsResponse.ok) {
 							const metrics = await metricsResponse.json();
-							services[cleanHostname].metrics = metrics;
-							services[cleanHostname].hasLiveData = true;
+							services[hostname].metrics = metrics;
+							services[hostname].hasLiveData = true;
 						}
 					} catch (error) {
-						console.warn(`Failed to get metrics for ${cleanHostname}:`, error);
-						services[cleanHostname].hasLiveData = false;
+						console.warn(`Failed to get metrics for ${hostname}:`, error);
+						services[hostname].hasLiveData = false;
 					}
 				}
 			}
@@ -495,14 +492,11 @@ async function handleAdminAPI(request: Request, url: URL, env: Env, adminPathPre
 async function handleInitializeServices(env: Env): Promise<Response> {
 	try {
 		if (env.DEFAULT_BACKENDS) {
-			const entries = env.DEFAULT_BACKENDS.split(',');
-			for (const entry of entries) {
-				const [hostname, ...urls] = entry.split('|');
-				if (hostname && urls.length > 0) {
-					const cleanHostname = hostname.trim();
-					const cleanUrls = urls.map(url => url.trim());
-					
-					const doId = env.LOAD_BALANCER_DO.idFromName(cleanHostname);
+			const groups = parseDefaultBackends(env.DEFAULT_BACKENDS);
+			for (const group of groups) {
+				const { hostname, backends } = group;
+				if (hostname && backends.length > 0) {
+					const doId = env.LOAD_BALANCER_DO.idFromName(hostname);
 					const stub = env.LOAD_BALANCER_DO.get(doId);
 					
 					// Initialize service
@@ -510,15 +504,15 @@ async function handleInitializeServices(env: Env): Promise<Response> {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
-							hostname: cleanHostname,
-							backends: cleanUrls,
+							hostname: hostname,
+							backends: backends,
 							mode: 'simple',
 							source: 'default'
 						})
 					});
 					
 					await stub.fetch(serviceRequest);
-					console.log(`[Initialize] Initialized service ${cleanHostname}`);
+					console.log(`[Initialize] Initialized service ${hostname}`);
 				}
 			}
 		}

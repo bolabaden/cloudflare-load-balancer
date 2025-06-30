@@ -47,33 +47,53 @@ export class LoadBalancerDO implements DurableObject {
   }
 
   private async initializeEmptyConfig(serviceId: string) {
-    // Check if we have DEFAULT_BACKENDS for this service
-    const defaultBackends = this.env.DEFAULT_BACKENDS?.split(',')
-      .find(entry => entry.split('|')[0].trim() === serviceId);
+    // Check if we have DEFAULT_BACKENDS for this service using JSON parsing
+    let serviceBackends: string[] | undefined;
+    
+    if (this.env.DEFAULT_BACKENDS) {
+      try {
+        const config = JSON.parse(this.env.DEFAULT_BACKENDS);
+        
+        // Support both array format and object format
+        let services: any[] = [];
+        if (Array.isArray(config)) {
+          services = config;
+        } else if (config.services && Array.isArray(config.services)) {
+          services = config.services;
+        } else if (config.hostname && Array.isArray(config.backends)) {
+          services = [config];
+        }
+        
+        const matchingService = services.find((service: any) => service.hostname === serviceId);
+        if (matchingService && Array.isArray(matchingService.backends)) {
+          serviceBackends = matchingService.backends;
+        }
+      } catch (error) {
+        console.error(`[${serviceId}] Failed to parse DEFAULT_BACKENDS JSON:`, error);
+      }
+    }
     
     if (this.debug) {
       console.log(`[${serviceId}] DEFAULT_BACKENDS:`, this.env.DEFAULT_BACKENDS);
-      console.log(`[${serviceId}] Found defaultBackends:`, defaultBackends);
+      console.log(`[${serviceId}] Found serviceBackends:`, serviceBackends);
     }
     
-    if (defaultBackends) {
+    if (serviceBackends && serviceBackends.length > 0) {
       // Simple mode with default backends
-      const [hostname, ...urls] = defaultBackends.split('|');
-      
       if (this.debug) {
-        console.log(`[${serviceId}] Parsed URLs:`, urls);
+        console.log(`[${serviceId}] Parsed URLs:`, serviceBackends);
       }
       this.config = {
         serviceId,
         mode: 'simple',
-        simpleBackends: urls.map(url => url.trim()),
+        simpleBackends: serviceBackends,
         pools: [{
           id: "simple-pool",
           name: "Simple Failover Pool",
-          backends: urls.map((url, index) => ({
+          backends: serviceBackends.map((url: string, index: number) => ({
             id: `backend-${index}`,
-            url: url.trim(),
-            ip: new URL(url.trim()).hostname,
+            url: url,
+            ip: new URL(url).hostname,
             weight: 1,
             healthy: true,
             consecutiveFailures: 0,

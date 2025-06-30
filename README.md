@@ -80,7 +80,13 @@ WEB_AUTH_USERNAME = "admin"
 WEB_AUTH_PASSWORD = "admin123"
 
 # Load Balancer Configuration
-DEFAULT_BACKENDS = "example.com|https://backend1.com|https://backend2.com"
+
+# Single service format
+DEFAULT_BACKENDS = "{\"hostname\":\"example.com\",\"backends\":[\"https://backend1.com\",\"https://backend2.com\",\"https://backend3.com\"]}"
+
+# Multiple services format
+DEFAULT_BACKENDS = "{\"services\":[{\"hostname\":\"api.example.com\",\"backends\":[\"https://api1.com\",\"https://api2.com\"]},{\"hostname\":\"web.example.com\",\"backends\":[\"https://web1.com\",\"https://web2.com\"]},{\"hostname\":\"admin.example.com\",\"backends\":[\"https://admin1.com\",\"https://admin2.com\"]}]}"
+
 ENABLE_WEB_INTERFACE = "true"
 ```
 
@@ -201,8 +207,43 @@ POST /admin/services/{hostname}/health-check
 | `API_SECRET` | Bearer token for API access | Yes |
 | `WEB_AUTH_USERNAME` | Basic auth username (fallback) | No |
 | `WEB_AUTH_PASSWORD` | Basic auth password (fallback) | No |
-| `DEFAULT_BACKENDS` | Default backend configuration | No |
+| `DEFAULT_BACKENDS` | Default backend configuration (see format below) | No |
 | `ENABLE_WEB_INTERFACE` | Enable web interface (true/false) | No |
+
+### DEFAULT_BACKENDS Format
+
+The `DEFAULT_BACKENDS` environment variable uses JSON format for RFC 3986 compliance:
+
+#### Single Service Format
+```bash
+DEFAULT_BACKENDS = "{\"hostname\":\"example.com\",\"backends\":[\"https://backend1.com\",\"https://backend2.com\",\"https://backend3.com\"]}"
+```
+
+Example:
+```bash
+DEFAULT_BACKENDS = "{\"hostname\":\"api.example.com\",\"backends\":[\"https://api-server1.com\",\"https://api-server2.com\",\"https://api-server3.com\"]}"
+```
+
+#### Multiple Services Format
+```bash
+DEFAULT_BACKENDS = "{\"services\":[{\"hostname\":\"hostname1\",\"backends\":[\"https://backend1.com\",\"https://backend2.com\"]},{\"hostname\":\"hostname2\",\"backends\":[\"https://backend3.com\",\"https://backend4.com\"]}]}"
+```
+
+Example:
+```bash
+DEFAULT_BACKENDS = "{\"services\":[{\"hostname\":\"api.example.com\",\"backends\":[\"https://api1.com\",\"https://api2.com\"]},{\"hostname\":\"web.example.com\",\"backends\":[\"https://web1.com\",\"https://web2.com\"]},{\"hostname\":\"admin.example.com\",\"backends\":[\"https://admin1.com\",\"https://admin2.com\"]}]}"
+```
+
+#### Array Format (Alternative)
+```bash
+DEFAULT_BACKENDS = "[{\"hostname\":\"hostname1\",\"backends\":[\"https://backend1.com\",\"https://backend2.com\"]},{\"hostname\":\"hostname2\",\"backends\":[\"https://backend3.com\",\"https://backend4.com\"]}]"
+```
+
+**Format Rules:**
+- Use valid JSON format for all URL configurations
+- Each service has a `hostname` and `backends` array
+- All URLs must be properly formatted according to RFC 3986
+- Each hostname gets its own independent load balancer configuration
 
 ### Service Configuration Schema
 

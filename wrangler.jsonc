@@ -72,7 +72,7 @@
 		"CLOUDFLARE_EMAIL": "boden.crouch@gmail.com",
 		"CLOUDFLARE_ZONE_ID": "164c8d72507295b51851d9b05f0e37a1",
 		"DEBUG": "false",
-		"DEFAULT_BACKENDS": "aiostreams.bolabaden.org|https://aiostreams.bolabaden.duckdns.org,https://aiostreams-koyeb.bolabaden.org,https://aiostreams-render.bolabaden.org",
+		"DEFAULT_BACKENDS": "{\"services\":[{\"hostname\":\"aiostreams.bolabaden.org\",\"backends\":[\"https://aiostreams.bolabaden.duckdns.org\",\"https://aiostreams-koyeb.bolabaden.org\",\"https://aiostreams-render.bolabaden.org\"]}]}",
 		"ENABLE_WEB_INTERFACE": "true",
 		"ENVIRONMENT": "production",
 		"GITHUB_CLIENT_ID": "Ov23liVNzc4KAx7A3cJt",
