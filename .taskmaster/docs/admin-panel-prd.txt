@@ -1,0 +1,178 @@
+# Admin Panel & Control Dashboard PRD
+
+## Project Overview
+Implement a modern, responsive admin/control panel for the Cloudflare Load Balancer project using Vite + React. This will replace the current basic HTML/CSS/JS templates with a proper SPA that provides comprehensive load balancer management capabilities.
+
+## Technical Stack Requirements
+- **Frontend Framework**: Vite + React (latest stable versions)
+- **Cloudflare Integration**: Official Cloudflare Vite plugin 1.0+ with Workers Assets
+- **UI Framework**: Modern component library (Tailwind CSS + Headless UI or similar)
+- **State Management**: React Query for server state + Zustand for client state
+- **Routing**: React Router v6+
+- **Authentication**: Integration with existing auth.ts system
+- **API Integration**: RESTful API calls to existing Worker endpoints
+- **Build System**: Vite with Cloudflare Workers Assets deployment
+
+## Core Features & Requirements
+
+### 1. Authentication & Security
+- Secure login system integrated with existing auth.ts
+- Role-based access control (admin, operator, viewer)
+- Session management with automatic logout
+- CSRF protection and secure headers
+- Multi-factor authentication support
+
+### 2. Dashboard Overview
+- Real-time load balancer status overview
+- Backend server health monitoring dashboard
+- Traffic distribution visualization
+- Performance metrics and charts
+- Alert notifications and status indicators
+- Quick action buttons for common operations
+
+### 3. Backend Management
+- Add/remove/edit backend servers
+- Enable/disable backends without removal
+- Health check configuration per backend
+- Weight adjustment for load distribution
+- Bulk operations for multiple backends
+- Import/export backend configurations
+
+### 4. Load Balancing Configuration
+- Algorithm selection (round-robin, weighted, least-connections)
+- Session stickiness configuration
+- Failover behavior settings
+- Timeout and retry configuration
+- Circuit breaker settings
+- Geographic routing rules
+
+### 5. Monitoring & Analytics
+- Real-time traffic graphs and metrics
+- Historical performance data
+- Error rate monitoring
+- Response time analytics
+- Backend-specific metrics
+- Exportable reports and logs
+
+### 6. API Documentation Interface
+- Interactive API documentation (Swagger/OpenAPI)
+- API key management
+- Rate limiting configuration
+- Webhook management
+- Integration examples and code snippets
+
+### 7. System Configuration
+- Global load balancer settings
+- Security configuration
+- Logging and debugging options
+- Maintenance mode controls
+- Configuration backup/restore
+- Environment-specific settings
+
+## Technical Implementation Details
+
+### Project Structure
+```
+public/
+├── admin/                    # New Vite + React admin panel
+│   ├── index.html
+│   ├── src/
+│   │   ├── components/       # Reusable UI components
+│   │   ├── pages/           # Page components
+│   │   ├── hooks/           # Custom React hooks
+│   │   ├── services/        # API service layer
+│   │   ├── utils/           # Utility functions
+│   │   ├── types/           # TypeScript type definitions
+│   │   └── App.tsx
+│   ├── package.json
+│   └── vite.config.ts
+├── css/                     # Legacy styles (to be migrated)
+├── js/                      # Legacy scripts (to be migrated)
+└── templates/               # Legacy templates (to be replaced)
+```
+
+### API Integration Requirements
+- RESTful API endpoints for all CRUD operations
+- WebSocket connections for real-time updates
+- Proper error handling and user feedback
+- Optimistic updates where appropriate
+- Caching strategy for improved performance
+
+### Performance Requirements
+- Initial page load < 2 seconds
+- Interactive response time < 100ms
+- Bundle size optimization
+- Code splitting for route-based loading
+- Progressive loading for large datasets
+- Offline capability for critical functions
+
+### Browser Support
+- Modern browsers (Chrome 90+, Firefox 88+, Safari 14+, Edge 90+)
+- Mobile responsive design
+- Touch-friendly interface for tablets
+- Keyboard navigation support
+- Screen reader accessibility
+
+### Security Requirements
+- Content Security Policy (CSP) implementation
+- XSS protection
+- HTTPS enforcement
+- Secure token storage
+- Input validation and sanitization
+- Audit logging for admin actions
+
+## Migration Strategy
+
+### Phase 1: Foundation Setup
+- Set up Vite + React project structure
+- Configure Cloudflare Workers Assets integration
+- Implement basic authentication flow
+- Create base layout and navigation
+
+### Phase 2: Core Dashboard
+- Implement main dashboard with real-time metrics
+- Backend management interface
+- Basic load balancer configuration
+
+### Phase 3: Advanced Features
+- Monitoring and analytics
+- API documentation interface
+- Advanced configuration options
+
+### Phase 4: Polish & Optimization
+- Performance optimization
+- Accessibility improvements
+- Comprehensive testing
+- Documentation and deployment
+
+## Integration Points
+
+### Existing Codebase Integration
+- Maintain compatibility with existing Worker endpoints
+- Reuse auth.ts authentication system
+- Integrate with durable-object.ts for state management
+- Utilize load-balancer-engine.ts APIs
+- Preserve existing API contracts
+
+### Deployment Integration
+- Update wrangler.jsonc for Workers Assets
+- Configure GitHub Actions for automated deployment
+- Set up staging and production environments
+- Implement proper asset versioning
+
+## Success Criteria
+- Modern, intuitive admin interface
+- Real-time monitoring capabilities
+- Comprehensive backend management
+- Mobile-responsive design
+- Sub-2-second load times
+- 100% feature parity with existing functionality
+- Improved user experience and workflow efficiency
+- Maintainable and scalable codebase
+
+## Dependencies & Constraints
+- Must work within Cloudflare Workers environment
+- Limited to Workers Assets capabilities
+- Must maintain existing API compatibility
+- Should leverage existing authentication system
+- Budget considerations for external dependencies 

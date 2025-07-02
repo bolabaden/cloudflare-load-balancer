@@ -1,0 +1,141 @@
+name: Deploy FlowBalance
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  NODE_VERSION: '20'
+  WRANGLER_VERSION: '3.95.0'
+
+jobs:
+  test-before-deploy:
+    name: Run Tests Before Deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Lint check
+        run: npm run lint
+
+      - name: Build static assets
+        run: npm run build:static
+
+      - name: Run critical tests
+        run: |
+          npm run test:unit
+          npm run test:engine
+          npm run test:integration
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: test-before-deploy
+    if: github.event.inputs.environment == 'staging' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build static assets
+        run: npm run build:static
+
+      - name: Deploy to Staging
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --env staging --minify
+          workingDirectory: '.'
+
+      - name: Run smoke tests against staging
+        run: |
+          # Wait for deployment to be ready
+          sleep 30
+          
+          # Run basic smoke tests
+          curl -f https://flowbalance-staging.your-domain.workers.dev/health || exit 1
+          curl -f https://flowbalance-staging.your-domain.workers.dev/api/status || exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.event.inputs.environment == 'production' && github.event_name == 'workflow_dispatch'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build static assets
+        run: npm run build:static
+
+      - name: Deploy to Production
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --env production --minify
+          workingDirectory: '.'
+
+      - name: Run production smoke tests
+        run: |
+          # Wait for deployment to be ready
+          sleep 30
+          
+          # Run basic smoke tests
+          curl -f https://flowbalance.your-domain.workers.dev/health || exit 1
+          curl -f https://flowbalance.your-domain.workers.dev/api/status || exit 1
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "🎉 FlowBalance successfully deployed to production!"
+          echo "URL: https://flowbalance.your-domain.workers.dev"
+
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          echo "❌ FlowBalance deployment to production failed!"
+          exit 1 

@@ -7,8 +7,10 @@ import {
   OriginPool,
   LoadBalancer,
   CreateLoadBalancerRequest,
-  ConfigurationUpdateRequest
+  ConfigurationUpdateRequest,
+  LogEntry
 } from "./types";
+import { LoadBalancerEngine } from "./load-balancer-engine";
 
 export class LoadBalancerDO implements DurableObject {
   state: DurableObjectState;
@@ -20,6 +22,9 @@ export class LoadBalancerDO implements DurableObject {
   debug: boolean;
   private requestCountSinceSave: number = 0;
   private saveThreshold: number = 100;
+  private loadBalancerEngine?: LoadBalancerEngine;
+  private logEntries: LogEntry[] = [];
+  private maxLogEntries: number = 1000;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -30,6 +35,17 @@ export class LoadBalancerDO implements DurableObject {
     this.state.blockConcurrencyWhile(async () => {
       try {
         await this.loadState();
+        // Initialize the load balancer engine
+        this.loadBalancerEngine = new LoadBalancerEngine(this.config);
+        // Set the environment for bindings (email, KV, etc.)
+        this.loadBalancerEngine.setEnvironment(this.env);
+        
+        // Log successful initialization
+        this.addLogEntry('info', `Load balancer initialized for service ${this.serviceHostname}`, 'system', {
+          mode: this.config.mode,
+          pools: this.config.pools.length,
+          backends: this.config.pools.reduce((count, pool) => count + pool.backends.length, 0)
+        });
         // Ensure an alarm is set if active health checks are enabled
         if (this.config?.activeHealthChecks?.enabled && this.config.activeHealthChecks.interval > 0) {
           const currentAlarm = await this.state.storage.getAlarm();
@@ -42,6 +58,9 @@ export class LoadBalancerDO implements DurableObject {
         console.error(`[${this.serviceHostname}] Error during initialization:`, error);
         // Initialize with empty config if loading fails
         await this.initializeEmptyConfig(this.serviceHostname);
+        // Re-initialize the load balancer engine with the empty config
+        this.loadBalancerEngine = new LoadBalancerEngine(this.config);
+        this.loadBalancerEngine.setEnvironment(this.env);
       }
     });
   }
@@ -119,15 +138,46 @@ export class LoadBalancerDO implements DurableObject {
           session_affinity: {
             type: "none",
             enabled: false
+          },
+          // NEW: Zero-downtime failover configuration
+          zero_downtime_failover: {
+            enabled: true,
+            policy: 'temporary',
+            trigger_codes: [521, 522, 523, 525, 526],
+            max_retries: 3,
+            retry_delay_ms: 500,
+            adaptive_routing: true
           }
         },
         currentRoundRobinIndex: 0,
         passiveHealthChecks: { 
           max_failures: 3, 
           failure_timeout_ms: 30000, 
-          retryable_status_codes: [500, 502, 503, 504], 
+          retryable_status_codes: [500, 502, 503, 504, 521, 522, 523, 525, 526], 
           enabled: true, 
-          monitor_timeout: 10 
+          monitor_timeout: 10,
+          // NEW: Enhanced error handling configuration
+          circuit_breaker: {
+            enabled: true,
+            failure_threshold: 5,
+            recovery_timeout_ms: 60000,
+            success_threshold: 3,
+            error_rate_threshold: 50,
+            min_requests: 10
+          },
+          connection_error_handling: {
+            immediate_failover: true,
+            max_connection_retries: 2,
+            connection_timeout_ms: 10000,
+            retry_backoff_ms: 1000
+          },
+          health_scoring: {
+            enabled: true,
+            response_time_weight: 0.3,
+            error_rate_weight: 0.4,
+            availability_weight: 0.3,
+            time_window_ms: 300000
+          }
         },
         activeHealthChecks: { 
           enabled: false, 
@@ -192,10 +242,45 @@ export class LoadBalancerDO implements DurableObject {
           session_affinity: {
             type: "none",
             enabled: false
+          },
+          zero_downtime_failover: {
+            enabled: true,
+            policy: 'temporary',
+            trigger_codes: [521, 522, 523, 525, 526],
+            max_retries: 3,
+            retry_delay_ms: 500,
+            adaptive_routing: true
           }
         },
         currentRoundRobinIndex: 0,
-        passiveHealthChecks: { max_failures: 3, failure_timeout_ms: 30000, retryable_status_codes: [500, 502, 503, 504], enabled: true, monitor_timeout: 10 },
+        passiveHealthChecks: { 
+          max_failures: 3, 
+          failure_timeout_ms: 30000, 
+          retryable_status_codes: [500, 502, 503, 504, 521, 522, 523, 525, 526], 
+          enabled: true, 
+          monitor_timeout: 10,
+          circuit_breaker: {
+            enabled: true,
+            failure_threshold: 5,
+            recovery_timeout_ms: 60000,
+            success_threshold: 3,
+            error_rate_threshold: 50,
+            min_requests: 10
+          },
+          connection_error_handling: {
+            immediate_failover: true,
+            max_connection_retries: 2,
+            connection_timeout_ms: 10000,
+            retry_backoff_ms: 1000
+          },
+          health_scoring: {
+            enabled: true,
+            response_time_weight: 0.3,
+            error_rate_weight: 0.4,
+            availability_weight: 0.3,
+            time_window_ms: 300000
+          }
+        },
         activeHealthChecks: { enabled: false, path: "/healthz", interval: 60, timeout: 5, type: 'http', consecutive_up: 2, consecutive_down: 3, retries: 1 },
         retryPolicy: { max_retries: 1, retry_timeout: 10000, backoff_strategy: 'constant', base_delay: 1000 },
         hostHeaderRewrite: 'preserve',
@@ -481,25 +566,51 @@ export class LoadBalancerDO implements DurableObject {
       }
     }
     
-    // Implement proper weighted round-robin if no session affinity or affinity failed
+    // Implement Smooth Weighted Round-Robin algorithm for optimal distribution
     const hasWeights = healthyBackends.some(b => b.weight !== 1);
     let selected: Backend;
 
     if (hasWeights) {
-      // Weighted round-robin: calculate total weight and use weighted selection
-      const totalWeight = healthyBackends.reduce((sum, b) => sum + b.weight, 0);
-      const weightedIndex = this.config.currentRoundRobinIndex % totalWeight;
+      // Smooth Weighted Round-Robin (SWRR) algorithm
+      // This provides better distribution than simple weighted round-robin
+      // Initialize current weights if not present
+      if (!this.config.backendCurrentWeights) {
+        this.config.backendCurrentWeights = {};
+      }
       
-      let currentWeight = 0;
+      // Calculate total weight
+      const totalWeight = healthyBackends.reduce((sum, b) => sum + b.weight, 0);
+      
+      // Update current weights and find the backend with highest current weight
+      let maxCurrentWeight = -1;
       selected = healthyBackends[0]; // fallback
+      
       for (const backend of healthyBackends) {
-        currentWeight += backend.weight;
-        if (weightedIndex < currentWeight) {
+        // Initialize current weight if not present
+        if (this.config.backendCurrentWeights[backend.id] === undefined) {
+          this.config.backendCurrentWeights[backend.id] = 0;
+        }
+        
+        // Add the backend's weight to its current weight
+        this.config.backendCurrentWeights[backend.id] += backend.weight;
+        
+        // Track the backend with the highest current weight
+        if (this.config.backendCurrentWeights[backend.id] > maxCurrentWeight) {
+          maxCurrentWeight = this.config.backendCurrentWeights[backend.id];
           selected = backend;
-          break;
         }
       }
-      this.config.currentRoundRobinIndex = (this.config.currentRoundRobinIndex + 1) % totalWeight;
+      
+      // Reduce the selected backend's current weight by the total weight
+      this.config.backendCurrentWeights[selected.id] -= totalWeight;
+      
+      // Clean up weights for backends that are no longer healthy
+      const healthyBackendIds = new Set(healthyBackends.map(b => b.id));
+      for (const backendId in this.config.backendCurrentWeights) {
+        if (!healthyBackendIds.has(backendId)) {
+          delete this.config.backendCurrentWeights[backendId];
+        }
+      }
     } else {
       // Simple round-robin when all weights are equal
       this.config.currentRoundRobinIndex = (this.config.currentRoundRobinIndex + 1) % healthyBackends.length;
@@ -546,9 +657,10 @@ export class LoadBalancerDO implements DurableObject {
     });
     
     try {
-      // Apply timeout
+      // Apply enhanced timeout based on configuration
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+      const timeoutMs = this.config.passiveHealthChecks.connection_error_handling?.connection_timeout_ms || 30000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       
       const isNonIdempotent = ['POST', 'PUT', 'PATCH'].includes(request.method);
       
@@ -556,14 +668,25 @@ export class LoadBalancerDO implements DurableObject {
       const response = await fetch(newRequest, { signal: controller.signal });
       clearTimeout(timeout);
       
-      // Record metrics for this request
-      this.recordMetric(backend.id, response.ok && response.status < 400, Date.now() - requestStartTime);
+      const responseTime = Date.now() - requestStartTime;
       
+      // Record metrics for this request
+      this.recordMetric(backend.id, response.ok && response.status < 400, responseTime);
+      
+      // Check if this is a successful response
       if (response.ok || (response.status < 500 && !this.config.passiveHealthChecks.retryable_status_codes.includes(response.status))) {
-        if (backend.consecutiveFailures > 0 || !backend.healthy) {
-          console.log(`[${this.serviceHostname}] Backend ${backend.id} healthy again after success.`);
-          backend.consecutiveFailures = 0; backend.healthy = true; backend.status = "Healthy";
-          this.state.waitUntil(this.saveConfig());
+        // Handle successful response using load balancer engine
+        if (this.loadBalancerEngine) {
+          this.loadBalancerEngine.handleBackendSuccess(backend, responseTime);
+        } else {
+          // Fallback to original logic
+          if (backend.consecutiveFailures > 0 || !backend.healthy) {
+            console.log(`[${this.serviceHostname}] Backend ${backend.id} healthy again after success.`);
+            backend.consecutiveFailures = 0; 
+            backend.healthy = true; 
+            backend.status = "Healthy";
+            this.state.waitUntil(this.saveConfig());
+          }
         }
         
         // Prepare response headers
@@ -573,6 +696,16 @@ export class LoadBalancerDO implements DurableObject {
         if (this.config.observability.add_backend_header) {
           newHeaders.set('X-Backend-Used', backend.id);
         }
+        
+        // Log successful request
+        this.addLogEntry('info', `Request forwarded successfully to backend ${backend.id}`, 'request', {
+          backendId: backend.id,
+          statusCode: response.status,
+          responseTime: responseTime,
+          clientIp: this.getClientIp(request) || undefined,
+          method: request.method,
+          path: url.pathname
+        });
         
         // Handle session affinity - set cookie for future requests if enabled
         const sessionAffinity = this.config.load_balancer.session_affinity;
@@ -597,46 +730,72 @@ export class LoadBalancerDO implements DurableObject {
           headers: newHeaders
         });
       } else {
-        // Handle retryable error status codes
-        if (this.config.passiveHealthChecks.retryable_status_codes.includes(response.status)) {
-          backend.consecutiveFailures++; backend.lastFailureTimestamp = Date.now(); backend.status = `Failed (status ${response.status})`;
+        // Handle error response using load balancer engine
+        if (this.loadBalancerEngine) {
+          this.loadBalancerEngine.handleBackendError(backend, response, responseTime);
+        } else {
+          // Fallback to original logic
+          backend.consecutiveFailures++; 
+          backend.lastFailureTimestamp = Date.now(); 
+          backend.status = `Failed (status ${response.status})`;
           console.warn(`[${this.serviceHostname}] Backend ${backend.id} fail status ${response.status}. Consecutive: ${backend.consecutiveFailures}`);
           if (backend.consecutiveFailures >= this.config.passiveHealthChecks.max_failures) {
-            backend.healthy = false; backend.status = `Unhealthy (status ${response.status}, ${backend.consecutiveFailures} fails)`;
+            backend.healthy = false; 
+            backend.status = `Unhealthy (status ${response.status}, ${backend.consecutiveFailures} fails)`;
             console.error(`[${this.serviceHostname}] Backend ${backend.id} marked unhealthy.`);
             this.state.waitUntil(this.saveConfig());
           }
+        }
+        
+        // Log error response
+        this.addLogEntry('warn', `Backend ${backend.id} returned error status ${response.status}`, 'request', {
+          backendId: backend.id,
+          statusCode: response.status,
+          responseTime: responseTime,
+          clientIp: this.getClientIp(request) || undefined,
+          method: request.method,
+          path: url.pathname,
+          consecutiveFailures: backend.consecutiveFailures
+        });
+        
+        // Check if this is a zero-downtime failover trigger code (523, 522, etc.)
+        const zeroDowntimeConfig = this.config.load_balancer.zero_downtime_failover;
+        const isZeroDowntimeTrigger = zeroDowntimeConfig?.enabled && 
+          zeroDowntimeConfig.trigger_codes?.includes(response.status);
+        
+        // Enhanced retry logic for 523 and other connection errors
+        const maxRetries = isZeroDowntimeTrigger ? 
+          (zeroDowntimeConfig.max_retries || 3) : 
+          this.config.retryPolicy.max_retries;
           
-          // Be more conservative about retrying non-idempotent methods
-          const shouldRetry = attempt < this.config.retryPolicy.max_retries &&
-            (!isNonIdempotent || response.status >= 502); // Only retry non-idempotent on server errors (502+)
+        const shouldRetry = attempt < maxRetries && (
+          isZeroDowntimeTrigger || // Always retry zero-downtime failover triggers
+          this.config.passiveHealthChecks.retryable_status_codes.includes(response.status) &&
+          (!isNonIdempotent || response.status >= 502) // Only retry non-idempotent on server errors (502+)
+        );
+        
+        if (shouldRetry) {
+          const retryDelay = isZeroDowntimeTrigger ? 
+            (zeroDowntimeConfig.retry_delay_ms || 500) : 
+            this.config.retryPolicy.base_delay;
+            
+          console.log(`[${this.serviceHostname}] Retrying request due to ${response.status} error. Attempt ${attempt + 1}/${maxRetries}`);
           
-          if (shouldRetry) {
-            if (isNonIdempotent) {
-              console.log(`[${this.serviceHostname}] Retrying ${request.method} request cautiously (server error ${response.status}). Attempt ${attempt + 1}/${this.config.retryPolicy.max_retries}`);
-            } else {
-              console.log(`[${this.serviceHostname}] Retrying request. Attempt ${attempt + 1}/${this.config.retryPolicy.max_retries}`);
-            }
-              
-            const nextBackend = this.selectBackend(request);
-            if (nextBackend && nextBackend.id !== backend.id) {
+          // Add retry delay for zero-downtime failover
+          if (retryDelay > 0) {
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+          }
+          
+          // Try to get a different backend for retry
+          const nextBackend = this.selectBackend(request);
+          if (nextBackend && nextBackend.id !== backend.id) {
+            return this.forwardRequest(request, nextBackend, attempt + 1);
+          } else if (nextBackend && nextBackend.id === backend.id) {
+            // Only one backend available - still retry if it's a critical error like 523
+            if (isZeroDowntimeTrigger || response.status === 523) {
+              console.warn(`[${this.serviceHostname}] Only one backend (${backend.id}) available, retrying same for critical error ${response.status}.`);
               return this.forwardRequest(request, nextBackend, attempt + 1);
-            } else if (nextBackend && nextBackend.id === backend.id) {
-              // Only one backend available - we can try again if policy allows
-              const healthyBackendCount = this.config.pools.reduce((count, pool) => {
-                return count + pool.backends.filter(b => b.healthy || 
-                  (Date.now() - (b.lastFailureTimestamp || 0) > this.config.passiveHealthChecks.failure_timeout_ms)).length;
-              }, 0);
-              
-              if (healthyBackendCount === 1) {
-                console.warn(`[${this.serviceHostname}] Only one backend (${backend.id}) available, retrying on same.`);
-                return this.forwardRequest(request, nextBackend, attempt + 1);
-              }
-            } else if (!nextBackend) { 
-              console.warn(`[${this.serviceHostname}] No other backend to retry on.`); 
             }
-          } else if (isNonIdempotent && attempt < this.config.retryPolicy.max_retries) {
-            console.warn(`[${this.serviceHostname}] Not retrying ${request.method} request due to non-server error status ${response.status}`);
           }
         }
         
@@ -650,56 +809,78 @@ export class LoadBalancerDO implements DurableObject {
     } catch (error) {
       // Handle connection errors (network errors, timeouts, etc.)
       const errorType = error instanceof DOMException && error.name === 'AbortError' ? 'Timeout' : 'Connection';
+      const responseTime = Date.now() - requestStartTime;
+      
       console.error(`[${this.serviceHostname}] ${errorType} error for ${backend.id}: ${error}`);
       
-      // Record the failure
-      this.recordMetric(backend.id, false, Date.now() - requestStartTime);
+      // Log connection error
+      this.addLogEntry('error', `${errorType} error for backend ${backend.id}`, 'error', {
+        backendId: backend.id,
+        errorType: errorType,
+        responseTime: responseTime,
+        clientIp: this.getClientIp(request) || undefined,
+        method: request.method,
+        path: url.pathname,
+        consecutiveFailures: backend.consecutiveFailures,
+        error: error instanceof Error ? error.message : String(error)
+      });
       
-      // Update backend health
-      backend.consecutiveFailures++; backend.lastFailureTimestamp = Date.now(); backend.status = `Error (${errorType})`;
-      if (backend.consecutiveFailures >= this.config.passiveHealthChecks.max_failures) {
-        backend.healthy = false; backend.status = `Unhealthy (${errorType}, ${backend.consecutiveFailures} fails)`;
-        console.error(`[${this.serviceHostname}] Backend ${backend.id} marked unhealthy due to fetch error.`);
-        this.state.waitUntil(this.saveConfig());
+      // Record the failure
+      this.recordMetric(backend.id, false, responseTime);
+      
+      // Handle error using load balancer engine
+      if (this.loadBalancerEngine) {
+        this.loadBalancerEngine.handleBackendError(backend, error as Error, responseTime);
+      } else {
+        // Fallback to original logic
+        backend.consecutiveFailures++; 
+        backend.lastFailureTimestamp = Date.now(); 
+        backend.status = `Error (${errorType})`;
+        if (backend.consecutiveFailures >= this.config.passiveHealthChecks.max_failures) {
+          backend.healthy = false; 
+          backend.status = `Unhealthy (${errorType}, ${backend.consecutiveFailures} fails)`;
+          console.error(`[${this.serviceHostname}] Backend ${backend.id} marked unhealthy due to fetch error.`);
+          this.state.waitUntil(this.saveConfig());
+        }
       }
       
-      // Retry logic
-      const isNonIdempotent = ['POST', 'PUT', 'PATCH'].includes(request.method);
+      // Enhanced retry logic for connection errors
+      const connectionConfig = this.config.passiveHealthChecks.connection_error_handling;
+      const shouldImmediatelyFailover = connectionConfig?.immediate_failover && errorType === 'Connection';
+      const maxRetries = shouldImmediatelyFailover ? 
+        (connectionConfig.max_connection_retries || 2) : 
+        this.config.retryPolicy.max_retries;
       
-      // Be more conservative about retrying non-idempotent methods on connection errors too
-      const shouldRetry = attempt < this.config.retryPolicy.max_retries &&
-        (!isNonIdempotent || errorType === 'Timeout'); // Retry non-idempotent only on timeout, not connection failures
+      const isNonIdempotent = ['POST', 'PUT', 'PATCH'].includes(request.method);
+      const shouldRetry = attempt < maxRetries && (
+        shouldImmediatelyFailover || // Immediate failover for connection errors
+        (!isNonIdempotent || errorType === 'Timeout') // Retry non-idempotent only on timeout
+      );
       
       if (shouldRetry) {
-        if (isNonIdempotent) {
-          console.log(`[${this.serviceHostname}] Retrying ${request.method} request cautiously after ${errorType}. Attempt ${attempt + 1}/${this.config.retryPolicy.max_retries}`);
-        } else {
-          console.log(`[${this.serviceHostname}] Conn error. Retrying request. Attempt ${attempt + 1}/${this.config.retryPolicy.max_retries}`);
+        const retryDelay = shouldImmediatelyFailover ? 
+          (connectionConfig?.retry_backoff_ms || 1000) : 
+          this.config.retryPolicy.base_delay;
+          
+        console.log(`[${this.serviceHostname}] Retrying request after ${errorType} error. Attempt ${attempt + 1}/${maxRetries}`);
+        
+        // Add retry backoff
+        if (retryDelay > 0) {
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
         
         const nextBackend = this.selectBackend(request);
         if (nextBackend && nextBackend.id !== backend.id) {
           return this.forwardRequest(request, nextBackend, attempt + 1);
-        } else if (nextBackend && nextBackend.id === backend.id) {
-          // Only one backend available
-          const healthyBackendCount = this.config.pools.reduce((count, pool) => {
-            return count + pool.backends.filter(b => b.healthy || 
-              (Date.now() - (b.lastFailureTimestamp || 0) > this.config.passiveHealthChecks.failure_timeout_ms)).length;
-          }, 0);
-          
-          if (healthyBackendCount === 1) {
-            console.warn(`[${this.serviceHostname}] Only one backend (${backend.id}) available, retrying on same after error.`);
-            return this.forwardRequest(request, nextBackend, attempt + 1);
-          }
-        } else if (!nextBackend) { 
-          console.warn(`[${this.serviceHostname}] No other backend to retry on after error.`); 
+        } else if (nextBackend && nextBackend.id === backend.id && shouldImmediatelyFailover) {
+          // For connection errors, still retry the same backend once more
+          console.warn(`[${this.serviceHostname}] Only one backend (${backend.id}) available, retrying after ${errorType} error.`);
+          return this.forwardRequest(request, nextBackend, attempt + 1);
         }
-      } else if (isNonIdempotent && attempt < this.config.retryPolicy.max_retries) {
-        console.warn(`[${this.serviceHostname}] Not retrying ${request.method} request due to connection failure`);
       }
       
       // If no retry or all retries failed, throw a more specific error
-      throw new Error(`${errorType} error connecting to backend ${backend.id}: ${error}`);
+      throw new Error(`${errorType} error connecting to backend ${backend.id} (attempt ${attempt + 1}): ${error}`);
     }
   }
 
@@ -728,6 +909,15 @@ export class LoadBalancerDO implements DurableObject {
       
       case 'initialize':
         return this.handleInitializeRequest(request);
+      
+      case 'logs':
+        if (request.method === 'DELETE') {
+          return this.handleClearLogsRequest();
+        }
+        return this.handleLogsRequest(request);
+      
+      case 'health-metrics':
+        return this.handleHealthMetricsRequest();
       
       default:
         return new Response('Unknown operation', { status: 404 });
@@ -766,13 +956,42 @@ export class LoadBalancerDO implements DurableObject {
 
       case 'PUT':
       case 'POST':
-        // Update a specific backend
+        // Update a specific backend or add a new backend
         try {
           const url = new URL(request.url);
           const backendId = url.searchParams.get('id');
           
+          if (!backendId && request.method === 'POST') {
+            // Add new backend
+            const newBackendData = await request.json() as {
+              url: string;
+              poolId?: string;
+              weight?: number;
+              priority?: number;
+              enabled?: boolean;
+            };
+            
+            const addedBackend = await this.addBackend(newBackendData);
+            
+            if (!addedBackend) {
+              return new Response(JSON.stringify({ error: 'Failed to add backend' }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+
+            return new Response(JSON.stringify({ 
+              success: true, 
+              backend: addedBackend,
+              message: 'Backend added successfully'
+            }), {
+              status: 201,
+              headers: { 'Content-Type': 'application/json' }
+            });
+          }
+          
           if (!backendId) {
-            return new Response(JSON.stringify({ error: 'Backend ID is required' }), {
+            return new Response(JSON.stringify({ error: 'Backend ID is required for updates' }), {
               status: 400,
               headers: { 'Content-Type': 'application/json' }
             });
@@ -790,13 +1009,14 @@ export class LoadBalancerDO implements DurableObject {
 
           return new Response(JSON.stringify({ 
             success: true, 
-            backend: updatedBackend 
+            backend: updatedBackend,
+            message: 'Backend updated successfully'
           }), {
             headers: { 'Content-Type': 'application/json' }
           });
         } catch (error) {
           return new Response(JSON.stringify({ 
-            error: 'Failed to update backend',
+            error: 'Failed to process backend request',
             details: error instanceof Error ? error.message : 'Unknown error'
           }), { 
             status: 400,
@@ -1233,15 +1453,66 @@ export class LoadBalancerDO implements DurableObject {
     // For a real load balancer - Route the traffic
     try {
       let selectedBackend: Backend | null = null;
+      let responseHeaders: Record<string, string> = {};
       
-      // TODO: Implement full routing with pools selection first, then backend selection
-      selectedBackend = this.selectBackend(request);
+      // Use the LoadBalancerEngine for sophisticated pool selection and backend routing
+      if (this.loadBalancerEngine) {
+        try {
+          const clientIp = this.getClientIp(request) || '127.0.0.1';
+          const routingResult = await this.loadBalancerEngine.routeRequest(request, clientIp);
+          selectedBackend = routingResult.backend;
+          responseHeaders = routingResult.headers;
+        } catch (error) {
+          // Handle special routing actions (fixed response, redirect)
+          if (error instanceof Error) {
+            if (error.name === 'FixedResponseAction') {
+              const fixedResponse = (error as any).response;
+              return new Response(fixedResponse.content, {
+                status: fixedResponse.status,
+                headers: {
+                  'Content-Type': fixedResponse.contentType,
+                  ...fixedResponse.headers
+                }
+              });
+            } else if (error.name === 'RedirectAction') {
+              const redirectResponse = (error as any).response;
+              return new Response(null, {
+                status: redirectResponse.status,
+                headers: {
+                  'Location': redirectResponse.url,
+                  ...redirectResponse.headers
+                }
+              });
+            }
+          }
+          throw error; // Re-throw if not a special action
+        }
+      } else {
+        // Fallback to simple backend selection if engine is not available
+        selectedBackend = this.selectBackend(request);
+      }
       
       if (!selectedBackend) {
         return new Response("No healthy backends available", { status: 503 });
       }
       
-      return await this.forwardRequest(request, selectedBackend);
+      const response = await this.forwardRequest(request, selectedBackend);
+      
+      // Add any additional headers from the routing engine
+      if (Object.keys(responseHeaders).length > 0) {
+        const newHeaders = new Headers(response.headers);
+        Object.entries(responseHeaders).forEach(([key, value]) => {
+          newHeaders.set(key, value);
+        });
+        
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: newHeaders
+        });
+      }
+      
+      return response;
     } catch (error) {
       console.error(`[${this.serviceHostname}] Error routing request: ${error}`);
       return new Response(`Error routing request: ${error}`, { status: 500 });
@@ -1302,14 +1573,42 @@ export class LoadBalancerDO implements DurableObject {
   // Load Balancer Management Methods
   async handleGetLoadBalancers(): Promise<Response> {
     try {
-      // For now, return empty array since we need to implement storage
-      const loadBalancers: any[] = [];
+      const loadBalancers: LoadBalancer[] = [];
+      
+      // Always include the current service's load balancer
+      loadBalancers.push(this.config.load_balancer);
+      
+      // Get all stored load balancers
+      const allKeys = await this.state.storage.list({ prefix: "loadbalancer:" });
+      
+      for (const [key, value] of allKeys) {
+        // Skip non-load balancer keys (like metrics, alerts, etc.)
+        if (key.includes(':metrics') || key.includes(':alerts') || key.includes(':health_checks')) {
+          continue;
+        }
+        
+        const lbId = key.replace('loadbalancer:', '');
+        
+        // Skip if it's the current service's load balancer (already added)
+        if (lbId === this.config.load_balancer.id) {
+          continue;
+        }
+        
+        if (value && typeof value === 'object') {
+          loadBalancers.push(value as LoadBalancer);
+        }
+      }
+      
+      // Sort by name for consistent ordering
+      loadBalancers.sort((a, b) => a.name.localeCompare(b.name));
       
       return new Response(JSON.stringify({
         success: true,
-        load_balancers: loadBalancers
+        load_balancers: loadBalancers,
+        count: loadBalancers.length
       }), { headers: { "Content-Type": "application/json" } });
     } catch (error: any) {
+      console.error(`[${this.serviceHostname}] Error retrieving load balancers: ${error.message}`);
       return new Response(JSON.stringify({
         success: false,
         error: "Failed to get load balancers",
@@ -1347,9 +1646,27 @@ export class LoadBalancerDO implements DurableObject {
         ttl: config.ttl || 60
       };
       
-      // Store the load balancer
-      this.config.load_balancer = loadBalancer;
-      await this.saveConfig();
+      // Check if this should replace the current service's load balancer
+      // or be stored as an additional load balancer
+      if (config.hostname === this.serviceHostname) {
+        // Update the current service's load balancer
+        this.config.load_balancer = loadBalancer;
+        
+        // Update the LoadBalancerEngine with the new config
+        if (this.loadBalancerEngine) {
+          this.loadBalancerEngine.updateConfig(this.config);
+        }
+        
+        await this.saveConfig();
+      } else {
+        // Store as an additional load balancer
+        await this.state.storage.put(`loadbalancer:${loadBalancer.id}`, loadBalancer);
+        
+        // Also store the pools if provided
+        if (config.pools && config.pools.length > 0) {
+          await this.state.storage.put(`loadbalancer:${loadBalancer.id}:pools`, config.pools);
+        }
+      }
       
       return new Response(JSON.stringify({
         success: true,
@@ -1366,12 +1683,30 @@ export class LoadBalancerDO implements DurableObject {
 
   async handleGetLoadBalancer(lbId: string): Promise<Response> {
     try {
-      // TODO: Retrieve from storage
+      // Check if the requested load balancer ID matches the current service's load balancer
+      if (this.config.load_balancer.id === lbId) {
+        return new Response(JSON.stringify({
+          success: true,
+          load_balancer: this.config.load_balancer
+        }), { headers: { "Content-Type": "application/json" } });
+      }
+      
+      // Try to retrieve from storage if it's a different load balancer
+      const storedLb = await this.state.storage.get(`loadbalancer:${lbId}`);
+      
+      if (storedLb) {
+        return new Response(JSON.stringify({
+          success: true,
+          load_balancer: storedLb
+        }), { headers: { "Content-Type": "application/json" } });
+      }
+      
       return new Response(JSON.stringify({
         success: false,
         error: "Load balancer not found"
       }), { status: 404, headers: { "Content-Type": "application/json" } });
     } catch (error: any) {
+      console.error(`[${this.serviceHostname}] Error retrieving load balancer ${lbId}: ${error.message}`);
       return new Response(JSON.stringify({
         success: false,
         error: "Failed to get load balancer",
@@ -1382,14 +1717,68 @@ export class LoadBalancerDO implements DurableObject {
 
   async handleUpdateLoadBalancer(lbId: string, request: Request): Promise<Response> {
     try {
-      const updates = await request.json();
+      const updates = await request.json() as Partial<LoadBalancer>;
       
-      // TODO: Update in storage
+      // Validate the updates
+      if (!updates || typeof updates !== 'object') {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Invalid update data: Expected object"
+        }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      
+      // Check if updating the current service's load balancer
+      if (this.config.load_balancer.id === lbId) {
+        // Update the current load balancer configuration
+        this.config.load_balancer = {
+          ...this.config.load_balancer,
+          ...updates,
+          id: lbId // Ensure ID doesn't change
+        };
+        
+        // Update the LoadBalancerEngine with the new config
+        if (this.loadBalancerEngine) {
+          this.loadBalancerEngine.updateConfig(this.config);
+        }
+        
+        // Save the updated configuration
+        await this.saveConfig();
+        
+        return new Response(JSON.stringify({
+          success: true,
+          message: "Load balancer updated successfully",
+          load_balancer: this.config.load_balancer
+        }), { headers: { "Content-Type": "application/json" } });
+      }
+      
+      // Try to retrieve and update from storage if it's a different load balancer
+      const storedLb = await this.state.storage.get(`loadbalancer:${lbId}`) as LoadBalancer;
+      
+      if (!storedLb) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Load balancer not found"
+        }), { status: 404, headers: { "Content-Type": "application/json" } });
+      }
+      
+      // Update the stored load balancer
+      const updatedLb: LoadBalancer = {
+        ...storedLb,
+        ...updates,
+        id: lbId // Ensure ID doesn't change
+      };
+      
+      // Store the updated load balancer
+      await this.state.storage.put(`loadbalancer:${lbId}`, updatedLb);
+      
       return new Response(JSON.stringify({
-        success: false,
-        error: "Load balancer not found"
-      }), { status: 404, headers: { "Content-Type": "application/json" } });
+        success: true,
+        message: "Load balancer updated successfully",
+        load_balancer: updatedLb
+      }), { headers: { "Content-Type": "application/json" } });
+      
     } catch (error: any) {
+      console.error(`[${this.serviceHostname}] Error updating load balancer ${lbId}: ${error.message}`);
       return new Response(JSON.stringify({
         success: false,
         error: "Failed to update load balancer",
@@ -1400,12 +1789,59 @@ export class LoadBalancerDO implements DurableObject {
 
   async handleDeleteLoadBalancer(lbId: string): Promise<Response> {
     try {
-      // TODO: Delete from storage
+      // Check if trying to delete the current service's load balancer
+      if (this.config.load_balancer.id === lbId) {
+        // Cannot delete the active load balancer - disable it instead
+        this.config.load_balancer.enabled = false;
+        
+        // Update the LoadBalancerEngine with the new config
+        if (this.loadBalancerEngine) {
+          this.loadBalancerEngine.updateConfig(this.config);
+        }
+        
+        // Save the updated configuration
+        await this.saveConfig();
+        
+        return new Response(JSON.stringify({
+          success: true,
+          message: "Active load balancer disabled (cannot be deleted while in use)",
+          load_balancer: this.config.load_balancer
+        }), { headers: { "Content-Type": "application/json" } });
+      }
+      
+      // Try to retrieve from storage to confirm it exists
+      const storedLb = await this.state.storage.get(`loadbalancer:${lbId}`);
+      
+      if (!storedLb) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Load balancer not found"
+        }), { status: 404, headers: { "Content-Type": "application/json" } });
+      }
+      
+      // Delete the load balancer from storage
+      await this.state.storage.delete(`loadbalancer:${lbId}`);
+      
+      // Also delete any associated data
+      const keysToDelete = [
+        `loadbalancer:${lbId}:metrics`,
+        `loadbalancer:${lbId}:alerts`,
+        `loadbalancer:${lbId}:health_checks`
+      ];
+      
+      await Promise.all(
+        keysToDelete.map(key => this.state.storage.delete(key))
+      );
+      
+      console.log(`[${this.serviceHostname}] Load balancer ${lbId} deleted successfully`);
+      
       return new Response(JSON.stringify({
-        success: false,
-        error: "Load balancer not found"
-      }), { status: 404, headers: { "Content-Type": "application/json" } });
+        success: true,
+        message: "Load balancer deleted successfully"
+      }), { headers: { "Content-Type": "application/json" } });
+      
     } catch (error: any) {
+      console.error(`[${this.serviceHostname}] Error deleting load balancer ${lbId}: ${error.message}`);
       return new Response(JSON.stringify({
         success: false,
         error: "Failed to delete load balancer",
@@ -1598,6 +2034,11 @@ export class LoadBalancerDO implements DurableObject {
     
     await this.saveConfig();
     
+    // Update the load balancer engine with new config
+    if (this.loadBalancerEngine) {
+      this.loadBalancerEngine.updateConfig(this.config);
+    }
+    
     return new Response(JSON.stringify({
       success: true,
       message: "Service configuration updated successfully",
@@ -1621,5 +2062,237 @@ export class LoadBalancerDO implements DurableObject {
       }
     }
     return null; // Backend not found
+  }
+
+  /**
+   * Add a new backend to a pool
+   */
+  private async addBackend(newBackendData: {
+    url: string;
+    poolId?: string;
+    weight?: number;
+    priority?: number;
+    enabled?: boolean;
+  }): Promise<Backend | null> {
+    try {
+      // Validate URL
+      const urlObj = new URL(newBackendData.url);
+      if (!['http:', 'https:'].includes(urlObj.protocol)) {
+        throw new Error('Invalid protocol. Only HTTP and HTTPS are supported.');
+      }
+
+      // Find target pool (default to first pool if not specified)
+      let targetPool = this.config.pools[0]; // Default to first pool
+      if (newBackendData.poolId) {
+        const foundPool = this.config.pools.find(p => p.id === newBackendData.poolId);
+        if (!foundPool) {
+          throw new Error(`Pool with ID ${newBackendData.poolId} not found`);
+        }
+        targetPool = foundPool;
+      }
+
+      if (!targetPool) {
+        throw new Error('No pools available to add backend to');
+      }
+
+      // Check if backend URL already exists
+      const existingBackend = targetPool.backends.find(b => b.url === newBackendData.url);
+      if (existingBackend) {
+        throw new Error('Backend with this URL already exists in the pool');
+      }
+
+      // Generate unique backend ID
+      const backendId = `backend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      // Create new backend object
+      const newBackend: Backend = {
+        id: backendId,
+        url: newBackendData.url.trim(),
+        ip: urlObj.hostname,
+        weight: newBackendData.weight || 1,
+        healthy: true,
+        consecutiveFailures: 0,
+        requests: 0,
+        successfulRequests: 0,
+        failedRequests: 0,
+        totalResponseTimeMs: 0,
+        priority: newBackendData.priority || 10,
+        enabled: newBackendData.enabled !== undefined ? newBackendData.enabled : true
+      };
+
+      // Add backend to pool
+      targetPool.backends.push(newBackend);
+
+      // Update simple backends array if in simple mode
+      if (this.config.mode === 'simple' && this.config.simpleBackends) {
+        this.config.simpleBackends.push(newBackend.url);
+      }
+
+      // Save configuration
+      await this.saveConfig();
+
+      // Initialize metrics for new backend
+      if (!this.metrics.backendMetrics[backendId]) {
+        this.metrics.backendMetrics[backendId] = {
+          requests: 0,
+          successfulRequests: 0,
+          failedRequests: 0,
+          totalResponseTimeMs: 0,
+          avgResponseTimeMs: 0
+        };
+      }
+
+      // Update load balancer engine if available
+      if (this.loadBalancerEngine) {
+        this.loadBalancerEngine.updateConfig(this.config);
+      }
+
+      // Log the addition
+      this.addLogEntry('info', `Backend ${newBackend.url} added to pool ${targetPool.name}`, 'config', {
+        backendId: newBackend.id,
+        poolId: targetPool.id,
+        url: newBackend.url
+      });
+
+      return newBackend;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.addLogEntry('error', `Failed to add backend: ${errorMessage}`, 'config', {
+        url: newBackendData.url,
+        poolId: newBackendData.poolId,
+        error: errorMessage
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Add a log entry to the in-memory log buffer
+   */
+  private addLogEntry(
+    level: LogEntry['level'],
+    message: string,
+    category: LogEntry['category'],
+    metadata?: LogEntry['metadata']
+  ): void {
+    const logEntry: LogEntry = {
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      level,
+      message,
+      category,
+      metadata
+    };
+
+    this.logEntries.unshift(logEntry); // Add to beginning for newest first
+
+    // Keep only the most recent entries
+    if (this.logEntries.length > this.maxLogEntries) {
+      this.logEntries = this.logEntries.slice(0, this.maxLogEntries);
+    }
+
+    // Also log to console for debugging
+    const logLevel = level.toUpperCase();
+    const timestamp = new Date(logEntry.timestamp).toISOString();
+    const metadataStr = metadata ? ` ${JSON.stringify(metadata)}` : '';
+    console.log(`[${timestamp}] [${this.serviceHostname}] ${logLevel}: ${message}${metadataStr}`);
+  }
+
+  /**
+   * Handle logs endpoint - retrieve logs with filtering and pagination
+   */
+  async handleLogsRequest(request: Request): Promise<Response> {
+    try {
+      const url = new URL(request.url);
+      const level = url.searchParams.get('level');
+      const category = url.searchParams.get('category');
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 1000);
+      const offset = parseInt(url.searchParams.get('offset') || '0');
+
+      let filteredLogs = [...this.logEntries];
+
+      // Apply filters
+      if (level) {
+        filteredLogs = filteredLogs.filter(log => log.level === level);
+      }
+      if (category) {
+        filteredLogs = filteredLogs.filter(log => log.category === category);
+      }
+
+      // Apply pagination
+      const paginatedLogs = filteredLogs.slice(offset, offset + limit);
+
+      return new Response(JSON.stringify({
+        success: true,
+        logs: paginatedLogs,
+        total: filteredLogs.length,
+        limit,
+        offset,
+        filters: { level, category }
+      }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (error: any) {
+      console.error(`[${this.serviceHostname}] Error retrieving logs: ${error.message}`);
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Failed to retrieve logs",
+        details: error.message
+      }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+  }
+
+  /**
+   * Clear all logs
+   */
+  async handleClearLogsRequest(): Promise<Response> {
+    try {
+      this.logEntries = [];
+      this.addLogEntry('info', 'Logs cleared by user request', 'system');
+      
+      return new Response(JSON.stringify({
+        success: true,
+        message: "Logs cleared successfully"
+      }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (error: any) {
+      console.error(`[${this.serviceHostname}] Error clearing logs: ${error.message}`);
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Failed to clear logs",
+        details: error.message
+      }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+  }
+
+  /**
+   * Get health metrics including circuit breaker states and health scores
+   */
+  async handleHealthMetricsRequest(): Promise<Response> {
+    try {
+      if (!this.loadBalancerEngine) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Load balancer engine not initialized"
+        }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
+
+      const metrics = this.loadBalancerEngine.getHealthMetrics();
+      
+      return new Response(JSON.stringify({
+        success: true,
+        backends: metrics
+      }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (error: any) {
+      console.error(`[${this.serviceHostname}] Error retrieving health metrics: ${error.message}`);
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Failed to retrieve health metrics",
+        details: error.message
+      }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
   }
 }

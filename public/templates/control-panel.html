@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Load Balancer Control Panel</title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>Load Balancer Control Panel</h1>
+        </div>
+        <div class="nav-links">
+            <a href="/dashboard" class="nav-link">Dashboard</a>
+            <a href="/control-panel" class="nav-link active">Control Panel</a>
+            <a href="/api-docs" class="nav-link">API Docs</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="control-panel-header">
+            <h2>Load Balancer Configuration</h2>
+            <div class="control-actions">
+                <button onclick="triggerHealthCheck()" class="btn btn-secondary">Run Health Check</button>
+                <button onclick="exportConfig()" class="btn btn-secondary">Export Config</button>
+                <button onclick="importConfig()" class="btn btn-secondary">Import Config</button>
+                <button onclick="resetMetrics()" class="btn btn-danger">Reset Metrics</button>
+            </div>
+        </div>
+
+        <div class="config-sections">
+            <div class="config-section">
+                <div class="section-header">
+                    <h3>Service Configuration</h3>
+                </div>
+                <form id="service-config-form" class="config-form">
+                    <div class="form-group">
+                        <label for="service-name">Service Name</label>
+                        <input type="text" id="service-name" name="name" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="algorithm">Load Balancing Algorithm</label>
+                        <select id="algorithm" name="algorithm" title="Select load balancing algorithm">
+                            <option value="round-robin">Round Robin</option>
+                            <option value="weighted">Weighted Round Robin</option>
+                            <option value="least-connections">Least Connections</option>
+                        </select>
+                    </div>
+
+                    <div class="form-section">
+                        <h4>Health Check Configuration</h4>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="health-check-enabled">
+                                Enable Health Checks
+                            </label>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="health-check-interval">Interval (seconds)</label>
+                                <input type="number" id="health-check-interval" min="10" value="30">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="health-check-timeout">Timeout (seconds)</label>
+                                <input type="number" id="health-check-timeout" min="1" value="5">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="health-check-path">Health Check Path</label>
+                            <input type="text" id="health-check-path" placeholder="/health" value="/health">
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Save Configuration</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="config-section">
+                <div class="section-header">
+                    <h3>Backend Pools</h3>
+                </div>
+                <div id="pools-container" class="pools-container">
+                    <!-- Pool configurations will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <div class="status-section">
+            <div class="section-header">
+                <h3>Current Status</h3>
+            </div>
+            <div class="status-grid">
+                <div class="status-card">
+                    <div class="status-label">Service Status</div>
+                    <div class="status-value" id="service-status">Running</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-label">Total Backends</div>
+                    <div class="status-value" id="total-backends">0</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-label">Healthy Backends</div>
+                    <div class="status-value" id="healthy-backends">0</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-label">Last Health Check</div>
+                    <div class="status-value" id="last-health-check">Never</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/js/control-panel.js"></script>
+</body>
+</html> 

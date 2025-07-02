@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Load Balancer Dashboard</title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>Load Balancer Dashboard</h1>
+        </div>
+        <div class="nav-links">
+            <a href="/dashboard" class="nav-link active">Dashboard</a>
+            <a href="/control-panel" class="nav-link">Control Panel</a>
+            <a href="/api-docs" class="nav-link">API Docs</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="dashboard-header">
+            <h2>System Overview</h2>
+            <div class="dashboard-actions">
+                <button id="refresh-btn" class="btn btn-primary">Refresh</button>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="auto-refresh" checked>
+                    <span class="slider">Auto-refresh</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-header">
+                    <h3>Total Requests</h3>
+                    <div class="metric-trend" id="requests-trend"></div>
+                </div>
+                <div class="metric-value" id="total-requests">0</div>
+                <div class="metric-subtitle">Last 24 hours</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <h3>Success Rate</h3>
+                    <div class="metric-trend" id="success-trend"></div>
+                </div>
+                <div class="metric-value" id="success-rate">0%</div>
+                <div class="metric-subtitle">2xx responses</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <h3>Average Response Time</h3>
+                    <div class="metric-trend" id="response-time-trend"></div>
+                </div>
+                <div class="metric-value" id="avg-response-time">0ms</div>
+                <div class="metric-subtitle">Last hour</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <h3>Active Backends</h3>
+                    <div class="metric-trend" id="backends-trend"></div>
+                </div>
+                <div class="metric-value" id="active-backends">0/0</div>
+                <div class="metric-subtitle">Healthy/Total</div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="dashboard-section">
+                <div class="section-header">
+                    <h3>Request Distribution</h3>
+                    <div class="chart-controls">
+                        <select id="time-range" title="Select time range for chart data">
+                            <option value="1h">Last Hour</option>
+                            <option value="24h" selected>Last 24 Hours</option>
+                            <option value="7d">Last 7 Days</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="requests-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="dashboard-section">
+                <div class="section-header">
+                    <h3>Response Time Distribution</h3>
+                </div>
+                <div class="chart-container">
+                    <canvas id="response-time-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="dashboard-section">
+                <div class="section-header">
+                    <h3>Backend Status</h3>
+                </div>
+                <div id="backend-status-list" class="backend-status-list">
+                    <!-- Backend status items will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="dashboard-section">
+                <div class="section-header">
+                    <h3>Error Rate by Status Code</h3>
+                </div>
+                <div class="chart-container">
+                    <canvas id="error-rate-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="dashboard-section full-width">
+                <div class="section-header">
+                    <h3>Recent Activity</h3>
+                    <div class="activity-filters">
+                        <button class="filter-btn active" data-filter="all">All</button>
+                        <button class="filter-btn" data-filter="errors">Errors</button>
+                        <button class="filter-btn" data-filter="health">Health Checks</button>
+                    </div>
+                </div>
+                <div id="activity-log" class="activity-log">
+                    <!-- Activity log items will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-footer">
+            <div class="footer-info">
+                <span>Last updated: <span id="last-updated">Never</span></span>
+                <span>Version: 1.0.0</span>
+            </div>
+        </div>
+    </main>
+
+    <script src="/js/dashboard.js"></script>
+</body>
+</html> 

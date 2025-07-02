@@ -349,27 +349,79 @@ async function loadHealthData() {
     for (const [serviceName, serviceData] of Object.entries(services.services)) {
       try {
         const health = await apiCall(`/admin/services/${serviceName}/health`);
+        
+        // Try to get enhanced health metrics
+        let healthMetrics = null;
+        try {
+          healthMetrics = await apiCall(`/admin/services/${serviceName}/health-metrics`);
+        } catch (e) {
+          console.warn(`Enhanced health metrics not available for ${serviceName}`);
+        }
 
         html += `
           <div class="health-service">
-            <h4>${serviceName}</h4>
+            <div class="service-header">
+              <h4>${serviceName}</h4>
+              <button class="btn btn-sm btn-secondary" onclick="runHealthCheck('${serviceName}')">
+                <i class="fas fa-sync"></i> Check Now
+              </button>
+            </div>
             <div class="health-backends">
         `;
         
         if (health.backends && health.backends.length > 0) {
           health.backends.forEach(backend => {
             const statusClass = backend.healthy ? 'status-healthy' : 'status-error';
+            
+            // Get enhanced metrics for this backend if available
+            let circuitState = 'closed';
+            let healthScore = 100;
+            let errorCounts = { connection: 0, timeout: 0, http5xx: 0, http523: 0 };
+            
+            if (healthMetrics && healthMetrics.backends && healthMetrics.backends[backend.id]) {
+              const metrics = healthMetrics.backends[backend.id];
+              circuitState = metrics.circuitState || 'closed';
+              healthScore = Math.round(metrics.healthScore || 100);
+              errorCounts = metrics.errorCounts || errorCounts;
+            }
+            
+            const circuitStateClass = circuitState === 'open' ? 'circuit-open' : circuitState === 'half-open' ? 'circuit-half-open' : 'circuit-closed';
+            const healthScoreClass = healthScore >= 80 ? 'score-good' : healthScore >= 50 ? 'score-warning' : 'score-critical';
+            
             html += `
               <div class="health-backend">
-                                    <div class="backend-url">${backend.url}</div>
+                <div class="backend-url">${backend.url}</div>
                 <div class="status-badge ${statusClass}">
                   ${backend.healthy ? 'Healthy' : 'Unhealthy'}
                 </div>
                 <div class="health-details">
-                  Response: ${backend.responseTime || 'N/A'}ms
-                                </div>
-                            </div>
-                        `;
+                  <div class="detail-row">
+                    <span>Response:</span>
+                    <span>${backend.responseTime || 'N/A'}ms</span>
+                  </div>
+                  <div class="detail-row">
+                    <span>Circuit:</span>
+                    <span class="circuit-state ${circuitStateClass}">${circuitState.toUpperCase()}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span>Health Score:</span>
+                    <span class="health-score ${healthScoreClass}">${healthScore}%</span>
+                  </div>
+                  <div class="detail-row">
+                    <span>523 Errors:</span>
+                    <span class="error-count">${errorCounts.http523}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span>Connection Errors:</span>
+                    <span class="error-count">${errorCounts.connection}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span>Failures:</span>
+                    <span class="error-count">${backend.consecutiveFailures || 0}</span>
+                  </div>
+                </div>
+              </div>
+            `;
           });
         } else {
           html += '<div class="health-backend">No backends configured</div>';
@@ -379,7 +431,9 @@ async function loadHealthData() {
       } catch (error) {
         html += `
           <div class="health-service">
-            <h4>${serviceName}</h4>
+            <div class="service-header">
+              <h4>${serviceName}</h4>
+            </div>
             <div class="health-error">Failed to check health: ${error.message}</div>
           </div>
         `;
@@ -408,24 +462,129 @@ async function loadHealthData() {
 async function loadLogsData() {
   const container = document.getElementById('logs-container');
   
-  // For now, show a placeholder since we don't have a logs endpoint
-  container.innerHTML = `
-        <div class="log-entry">
-            <span class="log-time">[${new Date().toISOString()}]</span>
-      <span class="log-level log-info">INFO</span>
-            <span class="log-message">Dashboard loaded successfully</span>
+  try {
+    // Get filter values
+    const levelFilter = document.getElementById('log-level-filter')?.value || '';
+    const categoryFilter = document.getElementById('log-category-filter')?.value || '';
+    const limit = document.getElementById('log-limit')?.value || '50';
+    
+    // Build query parameters
+    const params = new URLSearchParams();
+    if (levelFilter) params.append('level', levelFilter);
+    if (categoryFilter) params.append('category', categoryFilter);
+    params.append('limit', limit);
+    
+    const response = await apiCall(`/__lb_admin__/logs?${params.toString()}`);
+    
+    if (response.success && response.logs && response.logs.length > 0) {
+      container.innerHTML = `
+        <div class="logs-header">
+          <div class="logs-stats">
+            Showing ${response.logs.length} of ${response.total} logs
+          </div>
+          <div class="logs-controls">
+            <select id="log-level-filter" onchange="loadLogsData()">
+              <option value="">All Levels</option>
+              <option value="debug" ${levelFilter === 'debug' ? 'selected' : ''}>Debug</option>
+              <option value="info" ${levelFilter === 'info' ? 'selected' : ''}>Info</option>
+              <option value="warn" ${levelFilter === 'warn' ? 'selected' : ''}>Warning</option>
+              <option value="error" ${levelFilter === 'error' ? 'selected' : ''}>Error</option>
+              <option value="critical" ${levelFilter === 'critical' ? 'selected' : ''}>Critical</option>
+            </select>
+            <select id="log-category-filter" onchange="loadLogsData()">
+              <option value="">All Categories</option>
+              <option value="request" ${categoryFilter === 'request' ? 'selected' : ''}>Request</option>
+              <option value="health" ${categoryFilter === 'health' ? 'selected' : ''}>Health</option>
+              <option value="config" ${categoryFilter === 'config' ? 'selected' : ''}>Config</option>
+              <option value="error" ${categoryFilter === 'error' ? 'selected' : ''}>Error</option>
+              <option value="system" ${categoryFilter === 'system' ? 'selected' : ''}>System</option>
+              <option value="alert" ${categoryFilter === 'alert' ? 'selected' : ''}>Alert</option>
+            </select>
+            <select id="log-limit" onchange="loadLogsData()">
+              <option value="25" ${limit === '25' ? 'selected' : ''}>25 logs</option>
+              <option value="50" ${limit === '50' ? 'selected' : ''}>50 logs</option>
+              <option value="100" ${limit === '100' ? 'selected' : ''}>100 logs</option>
+              <option value="200" ${limit === '200' ? 'selected' : ''}>200 logs</option>
+            </select>
+            <button class="btn btn-sm btn-secondary" onclick="loadLogsData()">
+              <i class="fas fa-refresh"></i> Refresh
+            </button>
+          </div>
         </div>
-        <div class="log-entry">
-            <span class="log-time">[${new Date().toISOString()}]</span>
-      <span class="log-level log-info">INFO</span>
-      <span class="log-message">Services monitoring active</span>
-    </div>
-    <div class="log-entry">
-      <span class="log-time">[${new Date().toISOString()}]</span>
-      <span class="log-level log-warn">WARN</span>
-      <span class="log-message">Real-time logs not yet implemented</span>
+        <div class="logs-list">
+          ${response.logs.map(log => {
+            const timestamp = new Date(log.timestamp).toLocaleString();
+            const levelClass = `log-${log.level}`;
+            const categoryBadge = log.category ? `<span class="log-category log-category-${log.category}">${log.category.toUpperCase()}</span>` : '';
+            
+            let metadataHtml = '';
+            if (log.metadata && Object.keys(log.metadata).length > 0) {
+              const metadata = Object.entries(log.metadata)
+                .filter(([key, value]) => value !== undefined && value !== null)
+                .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`)
+                .join(', ');
+              metadataHtml = metadata ? `<div class="log-metadata">${metadata}</div>` : '';
+            }
+            
+            return `
+              <div class="log-entry log-entry-${log.level}">
+                <div class="log-header">
+                  <span class="log-time">${timestamp}</span>
+                  <span class="log-level ${levelClass}">${log.level.toUpperCase()}</span>
+                  ${categoryBadge}
+                </div>
+                <div class="log-message">${log.message}</div>
+                ${metadataHtml}
+              </div>
+            `;
+          }).join('')}
         </div>
+      `;
+    } else {
+      container.innerHTML = `
+        <div class="logs-header">
+          <div class="logs-stats">No logs available</div>
+          <div class="logs-controls">
+            <button class="btn btn-sm btn-secondary" onclick="loadLogsData()">
+              <i class="fas fa-refresh"></i> Refresh
+            </button>
+          </div>
+        </div>
+        <div class="logs-list">
+          <div class="log-entry log-entry-info">
+            <div class="log-header">
+              <span class="log-time">${new Date().toLocaleString()}</span>
+              <span class="log-level log-info">INFO</span>
+              <span class="log-category log-category-system">SYSTEM</span>
+            </div>
+            <div class="log-message">No logs available. Logs will appear here as requests are processed.</div>
+          </div>
+        </div>
+      `;
+    }
+  } catch (error) {
+    console.error('Failed to load logs:', error);
+    container.innerHTML = `
+      <div class="logs-header">
+        <div class="logs-stats">Error loading logs</div>
+        <div class="logs-controls">
+          <button class="btn btn-sm btn-secondary" onclick="loadLogsData()">
+            <i class="fas fa-refresh"></i> Retry
+          </button>
+        </div>
+      </div>
+      <div class="logs-list">
+        <div class="log-entry log-entry-error">
+          <div class="log-header">
+            <span class="log-time">${new Date().toLocaleString()}</span>
+            <span class="log-level log-error">ERROR</span>
+            <span class="log-category log-category-system">SYSTEM</span>
+          </div>
+          <div class="log-message">Failed to load logs: ${error.message}</div>
+        </div>
+      </div>
     `;
+  }
 }
 
 // Load recent activity
@@ -458,20 +617,39 @@ function refreshBackends() {
   loadBackendsData();
 }
 
-async function runHealthCheck() {
-  showSuccess('Running health checks...');
-  loadHealthData();
+async function runHealthCheck(serviceName = null) {
+  if (serviceName) {
+    showSuccess(`Running health check for ${serviceName}...`);
+    try {
+      await apiCall(`/admin/services/${serviceName}/health-check`, { method: 'POST' });
+      showSuccess(`Health check completed for ${serviceName}`);
+    } catch (error) {
+      showError(`Health check failed for ${serviceName}: ${error.message}`);
+    }
+  } else {
+    showSuccess('Running health checks for all services...');
+  }
+  
+  // Reload health data after check
+  setTimeout(() => {
+    loadHealthData();
+  }, 1000);
 }
 
-function clearLogs() {
-  const container = document.getElementById('logs-container');
-  container.innerHTML = `
-    <div class="log-entry">
-      <span class="log-time">[${new Date().toISOString()}]</span>
-      <span class="log-level log-info">INFO</span>
-      <span class="log-message">Logs cleared</span>
-    </div>
-  `;
+async function clearLogs() {
+  try {
+    const response = await apiCall('/__lb_admin__/logs', { method: 'DELETE' });
+    
+    if (response.success) {
+      showSuccess('Logs cleared successfully');
+      loadLogsData(); // Reload the logs
+    } else {
+      showError(`Failed to clear logs: ${response.error || 'Unknown error'}`);
+    }
+  } catch (error) {
+    console.error('Failed to clear logs:', error);
+    showError(`Failed to clear logs: ${error.message}`);
+  }
 }
 
 // Show error message

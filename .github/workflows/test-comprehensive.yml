@@ -1,0 +1,819 @@
+name: 🧪 Comprehensive FlowBalance Testing Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of tests to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - unit
+          - integration
+          - performance
+          - security
+          - vitest
+
+env:
+  NODE_VERSION: '20'
+  WRANGLER_VERSION: '3.95.0'
+
+jobs:
+  # Setup and validation job
+  setup:
+    name: 🔧 Setup & Validation
+    runs-on: ubuntu-latest
+    outputs:
+      should-run-unit: ${{ steps.changes.outputs.unit }}
+      should-run-integration: ${{ steps.changes.outputs.integration }}
+      should-run-performance: ${{ steps.changes.outputs.performance }}
+      should-run-security: ${{ steps.changes.outputs.security }}
+      should-run-vitest: ${{ steps.changes.outputs.vitest }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install Dependencies
+        run: npm ci
+
+      - name: 🔍 TypeScript Check
+        run: npm run typecheck
+
+      - name: 🎨 Lint Code
+        run: npm run lint
+
+      - name: 🏗️ Build Static Assets
+        run: npm run build:static
+
+      - name: 📊 Generate Test Matrix
+        id: test-matrix
+        run: |
+          if [ "${{ github.event.inputs.test_type }}" = "unit" ] || [ "${{ github.event.inputs.test_type }}" = "all" ] || [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "unit=true" >> $GITHUB_OUTPUT
+          fi
+          if [ "${{ github.event.inputs.test_type }}" = "integration" ] || [ "${{ github.event.inputs.test_type }}" = "all" ] || [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "integration=true" >> $GITHUB_OUTPUT
+          fi
+          if [ "${{ github.event.inputs.test_type }}" = "performance" ] || [ "${{ github.event.inputs.test_type }}" = "all" ] || [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "performance=true" >> $GITHUB_OUTPUT
+          fi
+          if [ "${{ github.event.inputs.test_type }}" = "security" ] || [ "${{ github.event.inputs.test_type }}" = "all" ] || [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "security=true" >> $GITHUB_OUTPUT
+          fi
+          if [ "${{ github.event.inputs.test_type }}" = "vitest" ] || [ "${{ github.event.inputs.test_type }}" = "all" ] || [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "vitest=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-
+            ${{ runner.os }}-build-
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-unit == 'true'
+    strategy:
+      matrix:
+        test-suite:
+          - config
+          - auth
+          - types
+          - frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests - ${{ matrix.test-suite }}
+        run: npm run test:${{ matrix.test-suite }}
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results-${{ matrix.test-suite }}
+          path: |
+            test-results/
+            coverage/
+          retention-days: 30
+
+  engine-tests:
+    name: Load Balancer Engine Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-unit == 'true'
+    strategy:
+      matrix:
+        algorithm:
+          - round-robin
+          - weighted
+          - least-connections
+          - geographic
+          - ip-hash
+          - random
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: 🧪 Run engine tests - ${{ matrix.algorithm }}
+        run: npm run test:engine
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+          TEST_ALGORITHM: ${{ matrix.algorithm }}
+
+      - name: � Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: engine-test-results-${{ matrix.algorithm }}
+          path: |
+            test-results/
+            coverage/
+          retention-days: 30
+
+  durable-object-tests:
+    name: Durable Object Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-unit == 'true'
+    strategy:
+      matrix:
+        scenario:
+          - state-management
+          - configuration
+          - persistence
+          - concurrency
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 💾 Restore Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: 🧪 Run Durable Object Tests - ${{ matrix.scenario }}
+        run: npm run test:durable-object
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+          TEST_SCENARIO: ${{ matrix.scenario }}
+
+      - name: 📤 Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: durable-object-test-results-${{ matrix.scenario }}
+          path: |
+            test-results/
+            coverage/
+          retention-days: 30
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-integration == 'true'
+    strategy:
+      matrix:
+        test-group:
+          - basic-routing
+          - health-checks
+          - failover
+          - session-affinity
+          - dns-integration
+          - metrics-collection
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 💾 Restore Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: 📦 Setup Test Environment
+        run: |
+          # Create isolated test environment
+          mkdir -p test-env/${{ matrix.test-group }}
+          cp -r src test-env/${{ matrix.test-group }}/
+          cp package.json test-env/${{ matrix.test-group }}/
+          cp wrangler.jsonc test-env/${{ matrix.test-group }}/
+
+      - name: Run integration tests - ${{ matrix.test-group }}
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+          TEST_GROUP: ${{ matrix.test-group }}
+          # Test-specific environment variables
+          GITHUB_CLIENT_ID: ${{ secrets.TEST_GITHUB_CLIENT_ID || 'test-github-client-id' }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.TEST_GITHUB_CLIENT_SECRET || 'test-github-client-secret' }}
+          GOOGLE_CLIENT_ID: ${{ secrets.TEST_GOOGLE_CLIENT_ID || 'test-google-client-id' }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.TEST_GOOGLE_CLIENT_SECRET || 'test-google-client-secret' }}
+          JWT_SECRET: 'test-jwt-secret-key-for-testing-purposes-only'
+          ADMIN_EMAILS: 'test@example.com,admin@example.com'
+          WEBHOOK_SECRET: 'test-webhook-secret'
+          NOTIFICATION_WEBHOOK_URL: 'https://hooks.slack.com/test'
+          DNS_PROVIDER: 'cloudflare'
+          DNS_API_TOKEN: ${{ secrets.TEST_DNS_API_TOKEN || 'test-dns-token' }}
+          DNS_ZONE_ID: ${{ secrets.TEST_DNS_ZONE_ID || 'test-zone-id' }}
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results-${{ matrix.test-group }}
+          path: |
+            test-results/
+            coverage/
+            test-env/${{ matrix.test-group }}/logs/
+          retention-days: 30
+
+  workers-runtime-tests:
+    name: Workers Runtime Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-integration == 'true'
+    strategy:
+      matrix:
+        runtime-feature:
+          - fetch-handling
+          - durable-objects
+          - kv-storage
+          - scheduled-events
+          - websockets
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install Wrangler
+        run: npm install -g wrangler@${{ env.WRANGLER_VERSION }}
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: 🧪 Run Workers runtime tests - ${{ matrix.runtime-feature }}
+        run: npm run test:workers-runtime
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+          RUNTIME_FEATURE: ${{ matrix.runtime-feature }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.TEST_CLOUDFLARE_ACCOUNT_ID || 'test-account-id' }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.TEST_CLOUDFLARE_API_TOKEN || 'test-api-token' }}
+
+      - name: 📤 Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workers-runtime-test-results-${{ matrix.runtime-feature }}
+          path: |
+            test-results/
+            coverage/
+            .wrangler/logs/
+          retention-days: 30
+
+  vitest-tests:
+    name: Vitest Workers Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-vitest == 'true'
+    strategy:
+      matrix:
+        test-category:
+          - core-functionality
+          - load-balancing
+          - health-monitoring
+          - authentication
+          - api-endpoints
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Vitest tests - ${{ matrix.test-category }}
+        run: npm run test:vitest
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+          TEST_CATEGORY: ${{ matrix.test-category }}
+          # Cloudflare Workers test environment
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.TEST_CLOUDFLARE_ACCOUNT_ID || 'test-account-id' }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.TEST_CLOUDFLARE_API_TOKEN || 'test-api-token' }}
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-test-results-${{ matrix.test-category }}
+          path: |
+            test-results/
+            coverage/
+          retention-days: 30
+
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-performance == 'true'
+    strategy:
+      matrix:
+        load-pattern:
+          - low-load
+          - medium-load
+          - high-load
+          - burst-load
+          - sustained-load
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run performance tests - ${{ matrix.load-pattern }}
+        run: npm run test:performance
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+          LOAD_PATTERN: ${{ matrix.load-pattern }}
+          PERFORMANCE_THRESHOLD_MS: 100
+          MEMORY_THRESHOLD_MB: 128
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-test-results-${{ matrix.load-pattern }}
+          path: |
+            performance-results/
+            metrics/
+            profiles/
+          retention-days: 30
+
+  security-tests:
+    name: Security Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-security == 'true'
+    strategy:
+      matrix:
+        security-aspect:
+          - authentication
+          - authorization
+          - input-validation
+          - rate-limiting
+          - csrf-protection
+          - xss-prevention
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run security tests - ${{ matrix.security-aspect }}
+        run: npm run test:security
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+          SECURITY_ASPECT: ${{ matrix.security-aspect }}
+          # Security test credentials (use test values)
+          JWT_SECRET: 'test-jwt-secret-key-for-testing-purposes-only'
+          WEBHOOK_SECRET: 'test-webhook-secret'
+
+      - name: Upload security test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-test-results-${{ matrix.security-aspect }}
+          path: |
+            security-results/
+            vulnerability-reports/
+          retention-days: 30
+
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-integration == 'true'
+    strategy:
+      matrix:
+        browser: [chromium, firefox]
+        scenario:
+          - user-authentication
+          - load-balancer-configuration
+          - health-monitoring
+          - failover-scenarios
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup test browsers
+        run: |
+          if [ "${{ matrix.browser }}" = "chromium" ]; then
+            sudo apt-get update
+            sudo apt-get install -y chromium-browser
+          elif [ "${{ matrix.browser }}" = "firefox" ]; then
+            sudo apt-get update
+            sudo apt-get install -y firefox
+          fi
+
+      - name: Run E2E tests - ${{ matrix.scenario }} on ${{ matrix.browser }}
+        run: npm run test:e2e
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+          E2E_BROWSER: ${{ matrix.browser }}
+          E2E_SCENARIO: ${{ matrix.scenario }}
+          # E2E test environment
+          BASE_URL: 'http://localhost:8787'
+          HEADLESS: 'true'
+
+      - name: Upload E2E test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-test-results-${{ matrix.scenario }}-${{ matrix.browser }}
+          path: |
+            e2e-results/
+            screenshots/
+            videos/
+          retention-days: 30
+
+  health-check-tests:
+    name: Health Check Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-integration == 'true'
+    strategy:
+      matrix:
+        health-check-type:
+          - http-health-checks
+          - tcp-health-checks
+          - dns-health-checks
+          - custom-health-checks
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup test backends
+        run: |
+          # Start test backend servers for health check testing
+          node test/setup-test-backends.js &
+          sleep 5
+
+      - name: Run health check tests - ${{ matrix.health-check-type }}
+        run: npm run test:health-checks
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+          HEALTH_CHECK_TYPE: ${{ matrix.health-check-type }}
+
+      - name: Upload health check test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: health-check-test-results-${{ matrix.health-check-type }}
+          path: |
+            health-check-results/
+            backend-logs/
+          retention-days: 30
+
+  api-tests:
+    name: API Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should-run-integration == 'true'
+    strategy:
+      matrix:
+        api-group:
+          - admin-api
+          - monitoring-api
+          - configuration-api
+          - metrics-api
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .wrangler
+            dist
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run API tests - ${{ matrix.api-group }}
+        run: npm run test:api
+        env:
+          NODE_ENV: test
+          ENVIRONMENT: test
+          API_GROUP: ${{ matrix.api-group }}
+          # API test credentials
+          ADMIN_EMAILS: 'test@example.com,admin@example.com'
+          JWT_SECRET: 'test-jwt-secret-key-for-testing-purposes-only'
+
+      - name: Upload API test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-test-results-${{ matrix.api-group }}
+          path: |
+            api-test-results/
+            request-logs/
+          retention-days: 30
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [
+      setup,
+      unit-tests,
+      engine-tests,
+      durable-object-tests,
+      integration-tests,
+      workers-runtime-tests,
+      vitest-tests,
+      performance-tests,
+      security-tests,
+      e2e-tests,
+      health-check-tests,
+      api-tests
+    ]
+    if: always()
+    steps:
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: test-artifacts
+
+      - name: Generate test summary
+        run: |
+          echo "# Test Summary" > test-summary.md
+          echo "" >> test-summary.md
+          echo "## Test Results Overview" >> test-summary.md
+          echo "" >> test-summary.md
+          
+          # Count test artifacts
+          total_artifacts=$(find test-artifacts -name "*.json" -o -name "*.xml" -o -name "*.txt" | wc -l)
+          echo "- Total test artifacts: $total_artifacts" >> test-summary.md
+          
+          # Job status summary
+          echo "" >> test-summary.md
+          echo "## Job Status" >> test-summary.md
+          echo "- Setup: ${{ needs.setup.result }}" >> test-summary.md
+          echo "- Unit Tests: ${{ needs.unit-tests.result }}" >> test-summary.md
+          echo "- Engine Tests: ${{ needs.engine-tests.result }}" >> test-summary.md
+          echo "- Durable Object Tests: ${{ needs.durable-object-tests.result }}" >> test-summary.md
+          echo "- Integration Tests: ${{ needs.integration-tests.result }}" >> test-summary.md
+          echo "- Workers Runtime Tests: ${{ needs.workers-runtime-tests.result }}" >> test-summary.md
+          echo "- Vitest Tests: ${{ needs.vitest-tests.result }}" >> test-summary.md
+          echo "- Performance Tests: ${{ needs.performance-tests.result }}" >> test-summary.md
+          echo "- Security Tests: ${{ needs.security-tests.result }}" >> test-summary.md
+          echo "- E2E Tests: ${{ needs.e2e-tests.result }}" >> test-summary.md
+          echo "- Health Check Tests: ${{ needs.health-check-tests.result }}" >> test-summary.md
+          echo "- API Tests: ${{ needs.api-tests.result }}" >> test-summary.md
+          
+          echo "" >> test-summary.md
+          echo "## Workflow Information" >> test-summary.md
+          echo "- Triggered by: ${{ github.event_name }}" >> test-summary.md
+          echo "- Branch: ${{ github.ref_name }}" >> test-summary.md
+          echo "- Commit: ${{ github.sha }}" >> test-summary.md
+          echo "- Test type: ${{ github.event.inputs.test_type || 'all' }}" >> test-summary.md
+
+      - name: Upload test summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-summary
+          path: test-summary.md
+          retention-days: 90
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('test-summary.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+      - name: Fail if any test failed
+        if: |
+          needs.unit-tests.result == 'failure' ||
+          needs.engine-tests.result == 'failure' ||
+          needs.durable-object-tests.result == 'failure' ||
+          needs.integration-tests.result == 'failure' ||
+          needs.workers-runtime-tests.result == 'failure' ||
+          needs.vitest-tests.result == 'failure' ||
+          needs.performance-tests.result == 'failure' ||
+          needs.security-tests.result == 'failure' ||
+          needs.e2e-tests.result == 'failure' ||
+          needs.health-check-tests.result == 'failure' ||
+          needs.api-tests.result == 'failure'
+        run: exit 1 

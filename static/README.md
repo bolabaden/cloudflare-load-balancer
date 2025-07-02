@@ -17,21 +17,6 @@ static/
 └── README.md          # This file
 ```
 
-## How It Works
-
-1. **Development**: Edit files directly in this `static/` directory
-2. **Build**: Run `npm run build:static` to generate `src/static-files-generated.ts`
-3. **Deploy**: The generated TypeScript module is bundled with the worker
-
-## Build Process
-
-The `build-static.js` script:
-
-- Reads all files from the `static/` directory
-- Escapes content for TypeScript template literals
-- Generates `src/static-files-generated.ts` with embedded content
-- Provides functions to serve static files and render templates
-
 ## Template Variables
 
 Templates support simple variable substitution using `{{VARIABLE_NAME}}` syntax:
