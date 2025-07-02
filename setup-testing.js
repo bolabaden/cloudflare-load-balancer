@@ -68,16 +68,6 @@ try {
   console.warn('  ⚠️  Linting issues found, but continuing...');
 }
 
-// Build static assets
-console.log('\n🏗️  Building static assets...');
-try {
-  execSync('npm run build:static', { stdio: 'inherit' });
-  console.log('  ✅ Static assets built successfully');
-} catch (error) {
-  console.error('  ❌ Failed to build static assets:', error.message);
-  process.exit(1);
-}
-
 // Create test environment file
 console.log('\n⚙️  Creating test environment configuration...');
 const testEnvContent = `# FlowBalance Test Environment Configuration

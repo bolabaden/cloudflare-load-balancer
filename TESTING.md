@@ -446,9 +446,6 @@ npm run typecheck
 # Code linting
 npm run lint
 
-# Build static assets
-npm run build:static
-
 # Development server
 npm run dev
 ```
