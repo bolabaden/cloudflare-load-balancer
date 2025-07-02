@@ -29,7 +29,9 @@
     "test:vitest:coverage": "vitest run --coverage",
     "test:setup": "node setup-testing.js",
     "test:ci": "npm run typecheck && npm run lint && npm run test:all",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && npm run typecheck:root && npm run typecheck:admin",
+    "typecheck:root": "tsc --noEmit",
+    "typecheck:admin": "cd admin && tsc --noEmit && cd ..",
     "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0 || echo 'Linting completed with warnings'"
   },
   "repository": {
