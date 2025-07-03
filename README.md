@@ -1,59 +1,32 @@
-# Cloudflare Load Balancer Worker with OAuth Authentication
+# FlowBalance ⚖️
 
-A sophisticated load balancer built on Cloudflare Workers that features OAuth authentication (GitHub/Google), a modern web interface, and dynamic backend configuration. Each service is managed by a separate Durable Object instance for high availability and performance.
+**Dead-simple load balancing for Cloudflare Workers**
 
-## ✨ Features
-
-### 🔐 Authentication
-
-- **OAuth Integration**: Sign in with GitHub or Google
-- **JWT Sessions**: Secure, stateless authentication
-- **Basic Auth Fallback**: Backward compatibility for API access
-- **Authorized Users**: Configurable email whitelist
-
-### 🌐 Web Interface
-
-- **Modern UI**: Beautiful, responsive design
-- **Real-time Monitoring**: Live backend health status
-- **Configuration Management**: Add/edit services through the web
-- **Metrics Dashboard**: Request statistics and success rates
-
-### ⚖️ Load Balancing
-
-- **Multiple Services**: Support for multiple hostnames
-- **Session Affinity**: IP hash, cookie-based, or none
-- **Health Checks**: Active and passive monitoring
-- **Failover**: Automatic backend switching
-- **Weighted Round Robin**: Configurable backend weights
-
-### 🔧 API
-
-- **RESTful API**: Complete configuration management
-- **Real-time Updates**: Changes take effect immediately
-- **Metrics Export**: JSON and HTML formats
-- **Bearer Token Auth**: Secure API access
-
-## 🚀 Quick Start
-
-### 1. Clone and Install
+Deploy reliable load balancing in minutes. No complex configuration needed.
 
 ```bash
-git clone https://github.com/th3w1zard1/cloudflare-failover-test
-cd cloudflare-failover-test
+# 1. Clone and setup
+git clone <your-repo> flowbalance
+cd flowbalance
 npm install
+
+# 2. Set a default backend (optional)
+# This example sets two backend servers behind your hostname
+export DEFAULT_BACKENDS='{"hostname": "your-public-facing-url", "backends": ["https://server1.com", "https://server2.com"]}'
+
+# 3. One command deploy
 npm run deploy
+
+# 4. Point a DNS A/AAAA record from  `your-public-facing-url` to this cloudflare loadbalancer worker.
 ```
 
-### 2. Configure OAuth Applications
+That's it! 🎉
 
-#### GitHub OAuth App
+Achieve industry-standard failover and fallback routing and integrate with your infrastructure seamlessly.
 
-1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
-2. Click "New OAuth App"
-3. Set Authorization callback URL to: `https://your-worker.your-subdomain.workers.dev/auth/github/callback`
-4. Note the Client ID and Client Secret
+## Quick Start (2 minutes)
 
-#### Google OAuth App  
+### 1. Set Your Backends
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
 2. Create a new OAuth 2.0 Client ID
@@ -150,51 +123,36 @@ Authorization: Bearer <api-secret>
 POST /admin/services/{hostname}/config
 Content-Type: application/json
 
+```json
 {
-  "backends": [
-    {
-      "id": "backend1",
-      "url": "https://backend1.example.com",
-      "weight": 1,
-      "healthy": true
-    }
-  ],
-  "sessionAffinity": {
-    "type": "ip",
-    "enabled": true
-  },
-  "activeHealthChecks": {
-    "enabled": true,
-    "path": "/health",
-    "intervalMs": 30000
+  "vars": {
+    "DEFAULT_BACKENDS": "{\"hostname\": \"your-domain.com\", \"backends\": [\"https://server1.com\", \"https://server2.com\"]}"
   }
 }
 ```
 
-### Get Service Metrics
+### 2. Deploy
 
 ```bash
-# JSON format
-GET /admin/services/{hostname}/metrics
-
-# HTML dashboard
-GET /admin/services/{hostname}/metrics/dashboard
+npm run deploy
 ```
 
-### Backend Management
+### 3. Done
 
-```bash
-# Enable/disable backend
-POST /admin/services/{hostname}/backends/{backendId}/enable
-POST /admin/services/{hostname}/backends/{backendId}/disable
+Your load balancer is live! It automatically:
 
-# Manual health check
-POST /admin/services/{hostname}/health-check
-```
+- ✅ Health checks your backends
+- ✅ Fails over when servers go down
+- ✅ Distributes traffic evenly
+- ✅ Handles connection errors gracefully
 
-## 🛠️ Configuration
+## What FlowBalance Does
 
-### Environment Variables
+- **Smart Health Checks**: Automatically finds `/health`, `/healthz`, `/status` endpoints
+- **Zero-Downtime Failover**: Instant switchover when backends fail
+- **Circuit Breakers**: Stops sending traffic to broken servers
+- **Round Robin**: Even traffic distribution by default
+- **Connection Error Handling**: Retries and failover for network issues
 
 | Variable | Description | Required |
 |----------|-------------|----------|
@@ -247,153 +205,233 @@ DEFAULT_BACKENDS = "[{\"hostname\":\"hostname1\",\"backends\":[\"https://backend
 
 ### Service Configuration Schema
 
-```typescript
-interface ServiceConfig {
-  backends: Backend[];
-  sessionAffinity: {
-    type: 'none' | 'ip' | 'cookie';
-    enabled: boolean;
-    cookieName?: string;
-    cookieTTLSeconds?: number;
-  };
-  activeHealthChecks: {
-    enabled: boolean;
-    path: string;
-    intervalMs: number;
-    timeoutMs: number;
-    expectedStatusCode?: number;
-  };
-  passiveHealthChecks: {
-    maxFailures: number;
-    failureTimeoutMs: number;
-    retryableStatusCodes: number[];
-  };
-  retryPolicy: {
-    maxRetries: number;
-  };
+```json
+{
+  "hostname": "api.myapp.com",
+  "backends": [
+    "https://api-server-1.myapp.com",
+    "https://api-server-2.myapp.com"
+  ]
 }
 ```
 
-## 🔒 Security
+### Multiple Services
 
-### OAuth Flow
-
-1. User clicks OAuth provider button
-2. Redirected to provider for authorization
-3. Provider redirects back with authorization code
-4. Worker exchanges code for user information
-5. User email checked against authorized list
-6. JWT token created and set as secure cookie
-
-### JWT Tokens
-
-- 24-hour expiration
-- HttpOnly, Secure, SameSite=Strict cookies
-- Include user information and expiration time
-- Signed with JWT_SECRET
-
-### Authorization Levels
-
-1. **OAuth Users**: Full web interface access (if email authorized)
-2. **Basic Auth**: Legacy web interface access
-3. **Bearer Token**: Full API access
-4. **No Auth**: Public load balancing (backend services)
-
-## 📊 Monitoring
-
-### Built-in Metrics
-
-- Total requests per service
-- Success/failure rates
-- Backend-specific statistics
-- Response times
-- Health check results
-
-### Web Dashboard
-
-- Real-time health status
-- Service overview cards
-- Backend management interface
-- Historical metrics (coming soon)
-
-## 🚦 Load Balancing
-
-### Algorithms
-
-- **Round Robin**: Default algorithm
-- **Weighted Round Robin**: Based on backend weights
-- **Session Affinity**: Sticky sessions via IP or cookie
-
-### Health Checks
-
-- **Active**: Periodic health endpoint checks
-- **Passive**: Based on request success/failure
-- **Configurable**: Custom paths, intervals, timeouts
-
-### Failover
-
-- Automatic backend disabling on consecutive failures
-- Configurable failure thresholds
-- Automatic re-enabling after recovery period
-
-## 🛠️ Development
-
-### Local Development
-
-```bash
-# Start development server
-npm run dev
-
-# Type checking
-npm run typecheck
-
-# Linting
-npm run lint
+```json
+{
+  "services": [
+    {
+      "hostname": "api.myapp.com", 
+      "backends": ["https://api1.com", "https://api2.com"]
+    },
+    {
+      "hostname": "files.myapp.com",
+      "backends": ["https://files1.com", "https://files2.com"]
+    }
+  ]
+}
 ```
 
-### Project Structure
+## Configuration
 
+FlowBalance works out-of-the-box with smart defaults. These settings handle 80%+ of use cases:
+
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| Health checks | Every 60s | Keeps bad servers out of rotation |
+| Failover | Instant | Switches to healthy servers immediately |
+| Retries | 1 retry | Tries failed requests once more |
+| Circuit breaker | 3 failures | Stops traffic after 3 consecutive fails |
+| Recovery | 60 seconds | How long to wait before trying failed servers |
+
+## Web Dashboard
+
+Visit `https://your-worker.workers.dev/__lb_admin__` to:
+
+- 📊 See backend health status
+- ⚙️ Adjust settings through the UI
+- 📈 View traffic and error metrics
+- 🔍 Browse request logs
+
+Default login: Use GitHub or Google OAuth
+
+## Troubleshooting
+
+### "All backends are down"
+
+1. Check your backend URLs are reachable
+2. Verify health check endpoints exist (`/health`, `/healthz`, etc.)
+3. Look at the admin dashboard for specific errors
+
+### High response times
+
+1. Check if backends are overloaded
+2. Consider adding more backend servers
+3. Verify network connectivity between Cloudflare and your servers
+
+### 523 Connection errors
+
+These are automatically handled! FlowBalance:
+
+- Immediately fails over to healthy backends
+- Opens circuit breakers for failing servers  
+- Retries with exponential backoff
+
+## Advanced Features
+
+<details>
+<summary>🔧 Custom Configuration (Click to expand)</summary>
+
+### Advanced Health Checks
+
+```json
+{
+  "activeHealthChecks": {
+    "enabled": true,
+    "path": "/custom-health",
+    "interval": 30,
+    "timeout": 10,
+    "consecutive_up": 3,
+    "consecutive_down": 2
+  }
+}
 ```
-src/
-├── index.ts           # Main worker entry point
-├── auth.ts           # OAuth and JWT authentication
-├── frontend.ts       # Modern web interface
-├── web-interface.ts  # Legacy web interface
-├── durable-object.ts # Load balancer logic
-├── config.ts         # Configuration management
-├── types.ts          # TypeScript types
-└── env.d.ts          # Environment type definitions
+
+### Geographic Routing
+
+```json
+{
+  "pools": [{
+    "id": "us-pool",
+    "geo_steering": {
+      "regions": ["US", "CA"],
+      "fallback_pool": "global-pool"
+    }
+  }]
+}
 ```
 
-## 📋 TODO
+### Session Affinity
 
-- [ ] Historical metrics storage
-- [ ] Advanced routing rules
-- [ ] Rate limiting
-- [ ] SSL certificate management
-- [ ] Multi-region support
-- [ ] Webhooks for health status changes
-- [ ] API key management
-- [ ] Audit logging
+```json
+{
+  "load_balancer": {
+    "session_affinity": {
+      "type": "cookie",
+      "cookie_name": "lb_session"
+    }
+  }
+}
+```
 
-## 🤝 Contributing
+### Weighted Backend Distribution
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+```json
+{
+  "backends": [
+    {"url": "https://big-server.com", "weight": 3},
+    {"url": "https://small-server.com", "weight": 1}
+  ]
+}
+```
 
-## 📄 License
+</details>
 
-MIT License - see LICENSE file for details.
+<details>
+<summary>🚀 Performance Tuning (Click to expand)</summary>
 
-## 🆘 Support
+### Aggressive Health Checks
 
-- Check the API documentation in the web interface
-- Review the configuration examples
-- Open an issue for bug reports or feature requests
+```json
+{
+  "activeHealthChecks": {
+    "interval": 10,
+    "timeout": 3,
+    "consecutive_down": 1
+  }
+}
+```
+
+### Circuit Breaker Tuning
+
+```json
+{
+  "passiveHealthChecks": {
+    "circuit_breaker": {
+      "failure_threshold": 1,
+      "recovery_timeout_ms": 30000,
+      "error_rate_threshold": 25
+    }
+  }
+}
+```
+
+### Connection Optimizations
+
+```json
+{
+  "connection_error_handling": {
+    "immediate_failover": true,
+    "max_connection_retries": 0,
+    "connection_timeout_ms": 5000
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>🏢 Enterprise Features (Click to expand)</summary>
+
+### Advanced Monitoring
+
+- Health scoring algorithms
+- Performance analytics  
+- Alert integrations
+- Custom middleware support
+
+### Security Features
+
+- OAuth authentication (GitHub, Google)
+- API key management
+- Access control lists
+- Request rate limiting
+
+### Integration APIs
+
+- REST API for configuration
+- Webhook notifications
+- Metrics export
+- Log streaming
+
+### High Availability
+
+- Multi-region deployments
+- DNS failover support
+- Edge location optimization
+- Automated recovery procedures
+
+See [Advanced Configuration Guide](./docs/advanced.md) for complete documentation.
+
+</details>
+
+## Contributing
+
+1. Fork the repo
+2. Create a feature branch: `git checkout -b my-feature`
+3. Run tests: `npm test`
+4. Submit a pull request
+
+## Support
+
+- 📖 [Documentation](./docs/)
+- 🐛 [Issues](https://github.com/your-repo/flowbalance/issues)
+- 💬 [Discussions](https://github.com/your-repo/flowbalance/discussions)
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file.
 
 ---
 
-**Note**: Remember to keep your OAuth secrets and JWT secret secure. Never commit them to version control. Use Cloudflare Workers secrets or environment variables for production deployments.
+**Made with ❤️ for developers who want load balancing, failover, and high availability that *just works*.**
