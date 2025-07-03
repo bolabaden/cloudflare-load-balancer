@@ -28,7 +28,100 @@ Achieve industry-standard failover and fallback routing and integrate with your 
 
 ### 1. Set Your Backends
 
-Edit your `wrangler.jsonc` and add your backends:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Create a new OAuth 2.0 Client ID
+3. Set Authorized redirect URI to: `https://your-worker.your-subdomain.workers.dev/auth/google/callback`
+4. Note the Client ID and Client Secret
+
+### 3. Update Configuration
+
+Edit `wrangler.toml` and update the environment variables:
+
+```toml
+[vars]
+# OAuth Configuration
+JWT_SECRET = "your-super-secret-jwt-key-change-this-in-production"
+GITHUB_CLIENT_ID = "your-github-oauth-app-client-id"
+GITHUB_CLIENT_SECRET = "your-github-oauth-app-client-secret"
+GOOGLE_CLIENT_ID = "your-google-oauth-client-id"
+GOOGLE_CLIENT_SECRET = "your-google-oauth-client-secret"
+AUTHORIZED_USERS = "your-email@example.com,another-user@example.com"
+
+# API Configuration
+API_SECRET = "your-api-secret-key"
+WEB_AUTH_USERNAME = "admin"
+WEB_AUTH_PASSWORD = "admin123"
+
+# Load Balancer Configuration
+
+# Single service format
+DEFAULT_BACKENDS = "{\"hostname\":\"example.com\",\"backends\":[\"https://backend1.com\",\"https://backend2.com\",\"https://backend3.com\"]}"
+
+# Multiple services format
+DEFAULT_BACKENDS = "{\"services\":[{\"hostname\":\"api.example.com\",\"backends\":[\"https://api1.com\",\"https://api2.com\"]},{\"hostname\":\"web.example.com\",\"backends\":[\"https://web1.com\",\"https://web2.com\"]},{\"hostname\":\"admin.example.com\",\"backends\":[\"https://admin1.com\",\"https://admin2.com\"]}]}"
+
+ENABLE_WEB_INTERFACE = "true"
+```
+
+### 4. Deploy
+
+```bash
+npm run deploy
+```
+
+### 5. Access the Web Interface
+
+Navigate to `https://your-worker.your-subdomain.workers.dev` and sign in with GitHub or Google!
+
+## 🖥️ Web Interface
+
+### Login Page
+
+- OAuth buttons for GitHub and Google
+- Basic auth fallback
+- Modern, responsive design
+- Clear error messaging
+
+### Dashboard
+
+- Service management interface
+- Real-time health monitoring
+- Add new services
+- View metrics and statistics
+- Global configuration overview
+- API documentation
+
+### Features
+
+- **Service Management**: Add, configure, and monitor services
+- **Backend Control**: Enable/disable individual backends
+- **Health Checks**: Manual and automatic health verification
+- **Metrics**: Request counts, success rates, response times
+- **Configuration**: Session affinity, health check settings
+
+## 🔌 API Reference
+
+### Authentication
+
+All API calls require authentication:
+
+```bash
+# OAuth (via web interface)
+Cookie: auth_token=<jwt-token>
+
+# Basic Auth (legacy)
+Authorization: Basic <base64-encoded-credentials>
+
+# Bearer Token (API)
+Authorization: Bearer <api-secret>
+```
+
+### Service Configuration
+
+```bash
+# Configure a service
+POST /admin/services/{hostname}/config
+Content-Type: application/json
 
 ```json
 {
@@ -61,9 +154,56 @@ Your load balancer is live! It automatically:
 - **Round Robin**: Even traffic distribution by default
 - **Connection Error Handling**: Retries and failover for network issues
 
-## Examples
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `JWT_SECRET` | Secret key for JWT signing | Yes |
+| `GITHUB_CLIENT_ID` | GitHub OAuth app client ID | Yes |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth app client secret | Yes |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID | Yes |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | Yes |
+| `AUTHORIZED_USERS` | Comma-separated list of authorized emails | Yes |
+| `API_SECRET` | Bearer token for API access | Yes |
+| `WEB_AUTH_USERNAME` | Basic auth username (fallback) | No |
+| `WEB_AUTH_PASSWORD` | Basic auth password (fallback) | No |
+| `DEFAULT_BACKENDS` | Default backend configuration (see format below) | No |
+| `ENABLE_WEB_INTERFACE` | Enable web interface (true/false) | No |
 
-### Single Service
+### DEFAULT_BACKENDS Format
+
+The `DEFAULT_BACKENDS` environment variable uses JSON format for RFC 3986 compliance:
+
+#### Single Service Format
+```bash
+DEFAULT_BACKENDS = "{\"hostname\":\"example.com\",\"backends\":[\"https://backend1.com\",\"https://backend2.com\",\"https://backend3.com\"]}"
+```
+
+Example:
+```bash
+DEFAULT_BACKENDS = "{\"hostname\":\"api.example.com\",\"backends\":[\"https://api-server1.com\",\"https://api-server2.com\",\"https://api-server3.com\"]}"
+```
+
+#### Multiple Services Format
+```bash
+DEFAULT_BACKENDS = "{\"services\":[{\"hostname\":\"hostname1\",\"backends\":[\"https://backend1.com\",\"https://backend2.com\"]},{\"hostname\":\"hostname2\",\"backends\":[\"https://backend3.com\",\"https://backend4.com\"]}]}"
+```
+
+Example:
+```bash
+DEFAULT_BACKENDS = "{\"services\":[{\"hostname\":\"api.example.com\",\"backends\":[\"https://api1.com\",\"https://api2.com\"]},{\"hostname\":\"web.example.com\",\"backends\":[\"https://web1.com\",\"https://web2.com\"]},{\"hostname\":\"admin.example.com\",\"backends\":[\"https://admin1.com\",\"https://admin2.com\"]}]}"
+```
+
+#### Array Format (Alternative)
+```bash
+DEFAULT_BACKENDS = "[{\"hostname\":\"hostname1\",\"backends\":[\"https://backend1.com\",\"https://backend2.com\"]},{\"hostname\":\"hostname2\",\"backends\":[\"https://backend3.com\",\"https://backend4.com\"]}]"
+```
+
+**Format Rules:**
+- Use valid JSON format for all URL configurations
+- Each service has a `hostname` and `backends` array
+- All URLs must be properly formatted according to RFC 3986
+- Each hostname gets its own independent load balancer configuration
+
+### Service Configuration Schema
 
 ```json
 {
