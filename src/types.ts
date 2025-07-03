@@ -26,6 +26,20 @@ export interface Backend {
   failedRequests: number;
   totalResponseTimeMs: number;
   outstandingRequests?: number; // For LORS algorithm
+  
+  // NEW: Enhanced error tracking and circuit breaker state
+  circuitBreakerState?: 'closed' | 'open' | 'half-open';
+  circuitBreakerOpenTimestamp?: number;
+  consecutiveSuccesses?: number; // Track consecutive successes for recovery
+  lastSuccessTimestamp?: number;
+  errorCounts?: {
+    connection: number;
+    timeout: number;
+    http5xx: number;
+    http523: number; // Specifically track 523 errors
+  };
+  avgResponseTimeMs?: number; // Rolling average response time
+  healthScore?: number; // 0-100 health score based on multiple factors
 }
 
 export interface OriginPool {
@@ -131,6 +145,14 @@ export interface DnsFailoverConfig {
   recovery_threshold: number; // Number of successes before recovery
   dns_ttl: number; // TTL for DNS records during failover
   update_method: 'immediate' | 'gradual'; // How to update DNS records
+  dns_record_name: string; // The DNS record name to update (e.g., "api.example.com")
+  
+  // Cloudflare API configuration for DNS record management
+  zone_id?: string; // Cloudflare Zone ID for the domain
+  api_token?: string; // Cloudflare API token with DNS write permissions
+  
+  // Enhanced DNS management options
+  webhook_url?: string; // Optional webhook URL for DNS change notifications
 }
 
 export interface AdaptiveRoutingConfig {
@@ -140,6 +162,13 @@ export interface AdaptiveRoutingConfig {
 export interface ZeroDowntimeFailoverConfig {
   enabled: boolean;
   policy: 'none' | 'temporary' | 'sticky';
+  
+  // NEW: Enhanced zero-downtime failover for specific error codes
+  trigger_codes?: number[]; // Error codes that trigger zero-downtime failover (default: [521, 522, 523, 525, 526])
+  max_retries?: number; // Maximum retries per request
+  retry_delay_ms?: number; // Delay between retries
+  fallback_pool_id?: string; // Specific pool to use for failover
+  adaptive_routing?: boolean; // Enable adaptive routing based on backend health
 }
 
 export interface LoadBalancerRule {
@@ -158,6 +187,7 @@ export interface RuleAction {
   status_code?: number;
   content_type?: string;
   content?: string;
+  headers?: Record<string, string>;
   
   // For forward
   pool_id?: string;
@@ -165,13 +195,37 @@ export interface RuleAction {
   // For redirect
   url?: string;
   status_code_redirect?: number;
+  preserve_query_string?: boolean;
   
   // For rewrite
   url_rewrite?: string;
+  path_rewrite?: string;
+  host_rewrite?: string;
   
   // Session affinity overrides
   session_affinity_ttl?: number;
   session_affinity_enabled?: boolean;
+}
+
+// Action response types for rule execution
+export interface FixedResponseAction extends Error {
+  name: 'FixedResponseAction';
+  response: {
+    status: number;
+    contentType: string;
+    content: string;
+    headers: Record<string, string>;
+  };
+}
+
+export interface RedirectAction extends Error {
+  name: 'RedirectAction';
+  response: {
+    url: string;
+    status: number;
+    preserveQuery: boolean;
+    headers: Record<string, string>;
+  };
 }
 
 export interface PassiveHealthCheckConfig {
@@ -180,6 +234,33 @@ export interface PassiveHealthCheckConfig {
   failure_timeout_ms: number; // How long a backend stays unhealthy after maxFailures
   retryable_status_codes: number[]; // e.g., [500, 502, 503, 504]
   monitor_timeout: number; // Timeout for health checks in seconds
+  
+  // NEW: Enhanced error handling configuration
+  circuit_breaker?: {
+    enabled: boolean;
+    failure_threshold: number; // Number of failures to open circuit
+    recovery_timeout_ms: number; // Time to wait before trying half-open
+    success_threshold: number; // Consecutive successes needed to close circuit
+    error_rate_threshold?: number; // Error rate % to open circuit (0-100)
+    min_requests?: number; // Minimum requests before calculating error rate
+  };
+  
+  // NEW: Specific handling for connection errors and 523s
+  connection_error_handling?: {
+    immediate_failover: boolean; // Immediately try next backend on connection errors
+    max_connection_retries: number; // Max retries for connection errors
+    connection_timeout_ms: number; // Connection timeout
+    retry_backoff_ms: number; // Backoff between connection retries
+  };
+  
+  // NEW: Health scoring system
+  health_scoring?: {
+    enabled: boolean;
+    response_time_weight: number; // 0-1, weight for response time in health score
+    error_rate_weight: number; // 0-1, weight for error rate in health score
+    availability_weight: number; // 0-1, weight for availability in health score
+    time_window_ms: number; // Time window for calculating health metrics
+  };
 }
 
 export interface ActiveHealthCheckConfig {
@@ -218,6 +299,51 @@ export interface ObservabilityConfig {
   add_region_header?: boolean;
 }
 
+// Notification system types
+export interface NotificationConfig {
+  id?: string;
+  type: 'webhook' | 'email' | 'slack' | 'discord' | 'teams' | 'pagerduty' | 'opsgenie';
+  enabled: boolean;
+  name?: string;
+  description?: string;
+  
+  // Common fields
+  webhook_url?: string;
+  secret?: string;
+  
+  // Email specific
+  address?: string;
+  
+  // Service-specific authentication
+  api_key?: string; // For OpsGenie, DataDog, etc.
+  integration_key?: string; // For PagerDuty
+  
+  // Metadata for Cloudflare-style notifications
+  account_id?: string;
+  zone_id?: string;
+  
+  // Filtering options
+  alert_types?: string[]; // Which alert types to send
+  severity_levels?: string[]; // Which severity levels to send
+}
+
+export interface NotificationPayload {
+  alert_id: string;
+  alert_type: string;
+  severity: string;
+  message: string;
+  timestamp: string;
+  service_id: string;
+  resolved: boolean;
+  resolved_timestamp: string | null;
+  metadata: {
+    [key: string]: any;
+    service_hostname: string;
+    account_id: string;
+    zone_id: string;
+  };
+}
+
 export interface LoadBalancerServiceConfig {
   serviceId: string; // The hostname this service handles
   mode?: 'simple' | 'advanced'; // Mode selector - simple for basic failover, advanced for full features
@@ -231,6 +357,7 @@ export interface LoadBalancerServiceConfig {
   
   // Common configuration
   currentRoundRobinIndex: number;
+  backendCurrentWeights?: { [backendId: string]: number }; // For Smooth Weighted Round-Robin algorithm
   passiveHealthChecks: PassiveHealthCheckConfig;
   activeHealthChecks: ActiveHealthCheckConfig;
   retryPolicy: RetryPolicyConfig;
@@ -270,6 +397,9 @@ export interface LoadBalancerServiceConfig {
     poolId?: string; // For route action
     priority: number;
   }[];
+  
+  // Notification settings
+  notificationSettings?: NotificationConfig[];
 }
 
 // Enhanced metrics with more granular data
@@ -349,6 +479,12 @@ export interface DnsState {
   failure_count: number;
   recovery_count: number;
   health_check_results: { [poolId: string]: HealthCheckResult };
+  
+  // Additional properties for enhanced DNS failover
+  currentPool: string; // Alias for current_pool_id for compatibility
+  lastFailoverTime?: number; // Alias for last_failover_time
+  lastRecoveryTime?: number;
+  failoverActive: boolean;
 }
 
 export interface HealthCheckResult {
@@ -459,7 +595,7 @@ export interface AnalyticsResponse {
 // Monitoring and alerting types
 export interface Alert {
   id: string;
-  type: 'backend_down' | 'pool_down' | 'high_latency' | 'high_error_rate' | 'dns_failover';
+  type: 'backend_down' | 'pool_down' | 'high_latency' | 'high_error_rate' | 'dns_failover' | 'dns_failover_triggered' | 'dns_failover_error' | 'dns_recovery_completed' | 'dns_recovery_error';
   severity: 'low' | 'medium' | 'high' | 'critical';
   message: string;
   timestamp: number;
@@ -494,6 +630,7 @@ export interface GeographicData {
   longitude: number;
   asn?: number;
   timezone?: string;
+  isp?: string;
 }
 
 export interface NetworkPath {
@@ -557,4 +694,28 @@ export interface BackendDashboard {
     healthy: boolean;
     responseTime?: number;
   }[];
+}
+
+export interface LogEntry {
+  id: string;
+  timestamp: number;
+  level: 'debug' | 'info' | 'warn' | 'error' | 'critical';
+  message: string;
+  category: 'request' | 'health' | 'config' | 'error' | 'system' | 'alert';
+  metadata?: {
+    requestId?: string;
+    backendId?: string;
+    poolId?: string;
+    statusCode?: number;
+    responseTime?: number;
+    clientIp?: string;
+    userAgent?: string;
+    [key: string]: any;
+  };
+}
+
+// Expression parser types for rule evaluation
+export interface Token {
+  type: 'string' | 'number' | 'operator' | 'keyword' | 'identifier';
+  value: any;
 } 
