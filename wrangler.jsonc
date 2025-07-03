@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "flowbalance",
+	"name": "cloudflare-loadbalancer-worker",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-06-05",
 	"minify": true,
@@ -96,19 +96,6 @@
 		"JWT_SECRET": "5c1f92013bf94fb19bfd9ec2528c78cf239014a188784c92aff70a90cb7e0aa2",
 		"WEB_AUTH_PASSWORD": "loadbalancer2024!",
 		"WEB_AUTH_USERNAME": "admin"
-	},
-
-	/**
-	 * Development environment only
-	 */
-	"env": {
-		"dev": {
-			"name": "cloudflare-loadbalancer-worker-dev",
-			"vars": {
-				"ENVIRONMENT": "development",
-				"DEBUG": "true"
-			}
-		}
 	},
 
 	/**

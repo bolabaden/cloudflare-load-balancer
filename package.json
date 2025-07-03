@@ -3,9 +3,7 @@
   "version": "1.0.0",
   "description": "Dead-simple load balancing for Cloudflare Workers. Deploy in minutes, enterprise features when you need them.",
   "scripts": {
-    "start": "node deploy-simple.js",
-    "deploy": "node deploy-simple.js",
-    "setup": "node setup.js",
+    "deploy": "npm run build && wrangler deploy",
     "dev": "npm run build:admin && wrangler dev",
     "dev:admin": "cd admin && vite",
     "build": "npm run build:admin && wrangler build",

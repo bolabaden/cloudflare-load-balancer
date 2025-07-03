@@ -303,5 +303,13 @@
       "updated": "2025-07-02T19:47:25.871Z",
       "description": "Fix failing frontend tests - 16 test failures need to be addressed"
     }
+  },
+  "test-cleanup": {
+    "tasks": [],
+    "metadata": {
+      "created": "2025-07-03T15:22:47.333Z",
+      "updated": "2025-07-03T15:22:47.333Z",
+      "description": "Systematic cleanup of test suite - fix real tests, delete placeholder tests"
+    }
   }
 }
