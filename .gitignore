@@ -208,6 +208,7 @@ dist
 .history
 .aider*
 
+setup-aiostreams.ps1
 fix-backends.ps1
 check-metrics.ps1
 check-config.ps1
@@ -215,12 +216,3 @@ reset-do.ps1
 test-failover.ps1
 the_worker.js
 worker.js
-src\static-files-generated.ts
-
-dev-debug.log
-# Environment variables
-# OS specific
-
-# Task files
-# tasks.json
-# tasks/ 

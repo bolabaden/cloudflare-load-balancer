@@ -21,8 +21,6 @@ declare namespace Cloudflare {
     AUTHORIZED_USERS: string;
     // Durable Objects
     LOAD_BALANCER_DO: DurableObjectNamespace;
-    // Static Assets
-    ASSETS: Fetcher;
   }
 }
 

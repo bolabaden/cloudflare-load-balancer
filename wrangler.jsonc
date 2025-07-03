@@ -10,20 +10,6 @@
 	"minify": true,
 	
 	/**
-	 * Routes for production environment
-	 */
-	"routes": [
-		{
-			"pattern": "aiostreams.bolabaden.org/*",
-			"zone_name": "bolabaden.org"
-		},
-		{
-			"pattern": "*.bolabaden.org/*",
-			"zone_name": "bolabaden.org"
-		}
-	],
-	
-	/**
 	 * Cron Triggers
 	 * Run health checks every 5 minutes
 	 */
@@ -75,7 +61,7 @@
 	},
 
 	/**
-	 * Environment Variables
+	 * Environment Variables (Global Defaults)
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
 	"vars": {
@@ -99,6 +85,33 @@
 	},
 
 	/**
+	 * Environment-specific configurations
+	 */
+	"env": {
+		"dev": {
+			"name": "cloudflare-loadbalancer-worker-dev"
+			// Uses all global vars by default, no overrides needed
+		},
+		"production": {
+			"name": "cloudflare-loadbalancer-worker",
+			"routes": [
+				{
+					"pattern": "aiostreams.bolabaden.org/*",
+					"zone_name": "bolabaden.org"
+				},
+				{
+					"pattern": "*.bolabaden.org/*",
+					"zone_name": "bolabaden.org"
+				}
+			],
+			"vars": {
+				// Only override variables that differ from global defaults
+				"ENVIRONMENT": "production"
+			}
+		}
+	}
+
+	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
@@ -107,11 +120,7 @@
 	 * Static Assets
 	 * https://developers.cloudflare.com/workers/static-assets/binding/
 	 */
-	"assets": {
-		"directory": "./public",
-		"binding": "ASSETS",
-		"run_worker_first": ["/api/*", "/health", "/admin/*"]
-	}
+	// "assets": { "directory": "./public/", "binding": "ASSETS" },
 
 	/**
 	 * Service Bindings (communicate between multiple Workers)
