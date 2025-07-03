@@ -295,5 +295,13 @@
       "updated": "2025-07-02T00:01:04.527Z",
       "description": "Tasks for master context"
     }
+  },
+  "frontend-test-fixes": {
+    "tasks": [],
+    "metadata": {
+      "created": "2025-07-02T19:47:25.871Z",
+      "updated": "2025-07-02T19:47:25.871Z",
+      "description": "Fix failing frontend tests - 16 test failures need to be addressed"
+    }
   }
 }

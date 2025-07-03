@@ -157,6 +157,37 @@ export async function renderApiDocs(env: Env): Promise<Response> {
     }
 }
 
+// Generate error pages
+export function generateErrorPage(status: number, message: string, details?: string): string {
+    const detailsHtml = details ? `<div class="error-details">${details}</div>` : '';
+    
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error ${status}</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        .error-container { max-width: 600px; margin: 0 auto; }
+        .error-code { font-size: 72px; font-weight: bold; color: #e53e3e; }
+        .error-message { font-size: 24px; margin: 20px 0; }
+        .error-details { color: #666; margin: 20px 0; }
+        .back-link { display: inline-block; margin-top: 30px; padding: 10px 20px; background: #3182ce; color: white; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-code">${status}</div>
+        <div class="error-message">${message}</div>
+        ${detailsHtml}
+        <a href="/" class="back-link">Go Back Home</a>
+    </div>
+</body>
+</html>`;
+}
+
 // Health check for frontend module
 export function frontendHealthCheck(): { status: string; timestamp: number } {
     return {

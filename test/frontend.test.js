@@ -5,6 +5,37 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 
+// Copy of generateErrorPage function from src/frontend.ts for testing
+function generateErrorPage(status, message, details) {
+    const detailsHtml = details ? `<div class="error-details">${details}</div>` : '';
+    
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error ${status}</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        .error-container { max-width: 600px; margin: 0 auto; }
+        .error-code { font-size: 72px; font-weight: bold; color: #e53e3e; }
+        .error-message { font-size: 24px; margin: 20px 0; }
+        .error-details { color: #666; margin: 20px 0; }
+        .back-link { display: inline-block; margin-top: 30px; padding: 10px 20px; background: #3182ce; color: white; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-code">${status}</div>
+        <div class="error-message">${message}</div>
+        ${detailsHtml}
+        <a href="/" class="back-link">Go Back Home</a>
+    </div>
+</body>
+</html>`;
+}
+
 // Mock user and environment objects
 const mockUser = {
   id: 'user-123',
@@ -170,33 +201,7 @@ function generateDashboard(user, env) {
 </html>`;
 }
 
-function generateErrorPage(status, message, details) {
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Error ${status}</title>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-        .error-container { max-width: 600px; margin: 0 auto; }
-        .error-code { font-size: 72px; font-weight: bold; color: #e53e3e; }
-        .error-message { font-size: 24px; margin: 20px 0; }
-        .error-details { color: #666; margin: 20px 0; }
-        .back-link { display: inline-block; margin-top: 30px; padding: 10px 20px; background: #3182ce; color: white; text-decoration: none; border-radius: 5px; }
-    </style>
-</head>
-<body>
-    <div class="error-container">
-        <div class="error-code">${status}</div>
-        <div class="error-message">${message}</div>
-        ${details ? `<div class="error-details">${details}</div>` : ''}
-        <a href="/" class="back-link">Go Back Home</a>
-    </div>
-</body>
-</html>`;
-}
+// generateErrorPage is now defined above for testing
 
 // Mock static file server
 class MockStaticFileServer {
@@ -554,7 +559,7 @@ describe('Frontend System', () => {
       
       assert(html.includes('Error 403'));
       assert(html.includes('Forbidden'));
-      assert(!html.includes('error-details'));
+      assert(!html.includes('<div class="error-details">'));
     });
   });
   
@@ -562,7 +567,7 @@ describe('Frontend System', () => {
     test('should serve CSS files', () => {
       const file = router.staticServer.serveFile('css/dashboard.css');
       
-      assert(file).not.toBeNull();
+      assert(file !== null);
       assert.strictEqual(file.mimeType, 'text/css');
       assert.strictEqual(file.status, 200);
       assert.strictEqual(file.headers['Content-Type'], 'text/css');
@@ -572,7 +577,7 @@ describe('Frontend System', () => {
     test('should serve JavaScript files', () => {
       const file = router.staticServer.serveFile('js/dashboard.js');
       
-      assert(file).not.toBeNull();
+      assert(file !== null);
       assert.strictEqual(file.mimeType, 'application/javascript');
       assert.strictEqual(file.status, 200);
       assert(file.content.includes('class Dashboard'));
@@ -581,7 +586,7 @@ describe('Frontend System', () => {
     test('should serve HTML templates', () => {
       const file = router.staticServer.serveFile('templates/dashboard.html');
       
-      assert(file).not.toBeNull();
+      assert(file !== null);
       assert.strictEqual(file.mimeType, 'text/html');
       assert.strictEqual(file.status, 200);
       assert(file.content.includes('<!DOCTYPE html>'));
@@ -590,17 +595,17 @@ describe('Frontend System', () => {
     test('should return null for non-existent files', () => {
       const file = router.staticServer.serveFile('nonexistent.txt');
       
-      assert(file).toBeNull();
+      assert.strictEqual(file, null);
     });
     
     test('should determine correct MIME types', () => {
-      assert(router.staticServer.getMimeType('test.css')).toBe('text/css');
-      assert(router.staticServer.getMimeType('test.js')).toBe('application/javascript');
-      assert(router.staticServer.getMimeType('test.html')).toBe('text/html');
-      assert(router.staticServer.getMimeType('test.json')).toBe('application/json');
-      assert(router.staticServer.getMimeType('test.png')).toBe('image/png');
-      assert(router.staticServer.getMimeType('test.jpg')).toBe('image/jpeg');
-      assert(router.staticServer.getMimeType('test.unknown')).toBe('application/octet-stream');
+      assert.strictEqual(router.staticServer.getMimeType('test.css'), 'text/css');
+      assert.strictEqual(router.staticServer.getMimeType('test.js'), 'application/javascript');
+      assert.strictEqual(router.staticServer.getMimeType('test.html'), 'text/html');
+      assert.strictEqual(router.staticServer.getMimeType('test.json'), 'application/json');
+      assert.strictEqual(router.staticServer.getMimeType('test.png'), 'image/png');
+      assert.strictEqual(router.staticServer.getMimeType('test.jpg'), 'image/jpeg');
+      assert.strictEqual(router.staticServer.getMimeType('test.unknown'), 'application/octet-stream');
     });
     
     test('should include cache headers for static assets', () => {
@@ -617,7 +622,7 @@ describe('Frontend System', () => {
       const response = await router.handleRequest(request, mockEnv);
       
       assert.strictEqual(response.status, 200);
-      assert(response.headers.get('Content-Type')).toBe('text/css');
+      assert.strictEqual(response.headers.get('Content-Type'), 'text/css');
     });
     
     test('should return 404 for non-existent static files', async () => {
@@ -632,7 +637,7 @@ describe('Frontend System', () => {
       const response = await router.handleRequest(request, mockEnv);
       
       assert.strictEqual(response.status, 302);
-      assert(response.headers.get('Location')).toBe('/auth/login');
+      assert.strictEqual(response.headers.get('Location'), '/auth/login');
     });
     
     test('should serve dashboard to authenticated users', async () => {
@@ -640,7 +645,7 @@ describe('Frontend System', () => {
       const response = await router.handleRequest(request, mockEnv, mockUser);
       
       assert.strictEqual(response.status, 200);
-      assert(response.headers.get('Content-Type')).toBe('text/html');
+      assert.strictEqual(response.headers.get('Content-Type'), 'text/html');
       
       const html = await response.text();
       assert(html.includes('FlowBalance Dashboard'));
@@ -652,7 +657,7 @@ describe('Frontend System', () => {
       const response = await router.handleRequest(request, mockEnv, mockUser);
       
       assert.strictEqual(response.status, 200);
-      assert(response.headers.get('Content-Type')).toBe('text/html');
+      assert.strictEqual(response.headers.get('Content-Type'), 'text/html');
     });
     
     test('should return 404 for unknown routes', async () => {
@@ -673,7 +678,7 @@ describe('Frontend System', () => {
       const response = await router.handleRequest(request, mockEnv);
       
       assert.strictEqual(response.status, 200);
-      assert(response.headers.get('Content-Type')).toBe('text/html');
+      assert.strictEqual(response.headers.get('Content-Type'), 'text/html');
       
       const html = await response.text();
       assert(html.includes('Load Balancer Control Panel'));
@@ -716,7 +721,7 @@ describe('Frontend System', () => {
       const response = await router.handleRequest(request, mockEnv);
       
       assert.strictEqual(response.status, 302);
-      assert(response.headers.get('Location')).toBe('/auth/login');
+      assert.strictEqual(response.headers.get('Location'), '/auth/login');
       
       const setCookie = response.headers.get('Set-Cookie');
       assert(setCookie.includes('auth_token=;'));
@@ -740,10 +745,10 @@ describe('Frontend System', () => {
       const response = await router.handleRequest(request, mockEnv, mockUser);
       
       assert.strictEqual(response.status, 200);
-      assert(response.headers.get('Content-Type')).toBe('application/json');
+      assert.strictEqual(response.headers.get('Content-Type'), 'application/json');
       
       const data = await response.json();
-      assert(Array.isArray(data)).toBe(true);
+      assert.strictEqual(Array.isArray(data), true);
       assert('id' in data[0]);
       assert('name' in data[0]);
       assert('status' in data[0]);
@@ -756,7 +761,7 @@ describe('Frontend System', () => {
       assert.strictEqual(response.status, 200);
       
       const data = await response.json();
-      assert(Array.isArray(data)).toBe(true);
+      assert.strictEqual(Array.isArray(data), true);
       assert('backends' in data[0]);
       assert('healthy' in data[0]);
     });
@@ -826,14 +831,14 @@ describe('Frontend System', () => {
       const request = createMockRequest('https://example.com/static/css/dashboard.css');
       const response = await router.handleRequest(request, mockEnv);
       
-      assert(response.headers.get('Cache-Control')).toBe('public, max-age=31536000');
+      assert.strictEqual(response.headers.get('Cache-Control'), 'public, max-age=31536000');
     });
     
     test('should not cache dynamic content', async () => {
       const request = createMockRequest('https://example.com/dashboard');
       const response = await router.handleRequest(request, mockEnv, mockUser);
       
-      assert(response.headers.get('Cache-Control')).toBeNull();
+      assert.strictEqual(response.headers.get('Cache-Control'), null);
     });
     
     test('should handle concurrent requests', async () => {

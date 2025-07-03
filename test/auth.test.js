@@ -639,7 +639,7 @@ describe('Authentication System Tests', () => {
   }
 
   function generateRandomState() {
-    const array = new Uint8Array(24);
+    const array = new Uint8Array(32); // Increased to 32 bytes to ensure at least 32 characters after encoding
     crypto.getRandomValues(array);
     return btoa(String.fromCharCode(...array)).replace(/[+/=]/g, '');
   }
