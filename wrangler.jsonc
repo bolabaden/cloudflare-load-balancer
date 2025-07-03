@@ -4,10 +4,24 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "cloudflare-loadbalancer-worker",
+	"name": "flowbalance",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-06-05",
 	"minify": true,
+	
+	/**
+	 * Routes for production environment
+	 */
+	"routes": [
+		{
+			"pattern": "aiostreams.bolabaden.org/*",
+			"zone_name": "bolabaden.org"
+		},
+		{
+			"pattern": "aiostreams.bocloud.org/*",
+			"zone_name": "bocloud.org"
+		}
+	],
 	
 	/**
 	 * Cron Triggers
@@ -61,7 +75,7 @@
 	},
 
 	/**
-	 * Environment Variables (Global Defaults)
+	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
 	"vars": {
@@ -88,20 +102,16 @@
 	 * Environment-specific configurations
 	 */
 	"env": {
-		"dev": {
-			"name": "cloudflare-loadbalancer-worker-dev"
-			// Uses all global vars by default, no overrides needed
-		},
 		"production": {
-			"name": "cloudflare-loadbalancer-worker",
+			"name": "flowbalance",
 			"routes": [
 				{
 					"pattern": "aiostreams.bolabaden.org/*",
 					"zone_name": "bolabaden.org"
 				},
 				{
-					"pattern": "*.bolabaden.org/*",
-					"zone_name": "bolabaden.org"
+					"pattern": "aiostreams.bocloud.org/*",
+					"zone_name": "bocloud.org"
 				}
 			],
 			"vars": {
@@ -109,7 +119,7 @@
 				"ENVIRONMENT": "production"
 			}
 		}
-	}
+	},
 
 	/**
 	 * Note: Use secrets to store sensitive data.
@@ -120,7 +130,11 @@
 	 * Static Assets
 	 * https://developers.cloudflare.com/workers/static-assets/binding/
 	 */
-	// "assets": { "directory": "./public/", "binding": "ASSETS" },
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"run_worker_first": ["/api/*", "/health", "/admin/*"]
+	}
 
 	/**
 	 * Service Bindings (communicate between multiple Workers)
