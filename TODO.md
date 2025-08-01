@@ -1,74 +1,50 @@
-# Cloudflare Worker Loadbalancer TODO List
+# Cloudflare Load Balancer TODO List
 
-## ✅ 1. **Round-Robin Algorithm Core**
+## ✅ Completed Features
 
-* [ ] Implement round-robin index tracking (incrementing per request, modulo backend list length).
-* [ ] Handle concurrency safely (atomic updates, especially across multiple instances—Durable Object helps here).
-* [ ] Support weighted round-robin (optional but useful).
+- [x] Round-robin load balancing with weighted distribution
+- [x] Session affinity via IP hashing
+- [x] Request proxying with header preservation
+- [x] Durable Object state management
+- [x] Dynamic backend configuration
+- [x] Timeouts and retry logic
+- [x] Passive health checks
+- [x] Active health checks
+- [x] Metrics collection and API
+- [x] Admin API endpoints
 
----
+## 🚀 Future Enhancements
 
-## ✅ 2. **Session Stickiness (Affinity)**
+### High Priority
 
-* [ ] Support session stickiness via:
+- [ ] Rate limiting per backend
+- [ ] Advanced routing rules (path-based, header-based)
+- [ ] Webhook notifications for health status changes
+- [ ] Historical metrics storage
+- [ ] SSL certificate validation
 
-  * [ ] Cookies (e.g., `X-Backend-Id`)
-  * [ ] IP hashing fallback (e.g., for non-cookie clients like APIs)
-* [ ] Allow configuring sticky vs. non-sticky routing per route or domain.
+### Medium Priority
 
----
+- [ ] Geographic routing (geo-based backend selection)
+- [ ] Load-based routing (least connections, least response time)
+- [ ] Circuit breaker pattern implementation
+- [ ] API key management for admin access
+- [ ] Audit logging
 
-## ✅ 3. **Request Proxying**
+### Low Priority
 
-* [ ] Forward all relevant headers (esp. `Host`, `Authorization`, cookies).
-* [ ] Rewrite `Host` header or preserve based on backend type (important for virtual hosting).
-* [ ] Handle streaming (chunked requests/responses, WebSockets, SSE).
-* [ ] Preserve HTTP methods and bodies (GET/POST/PUT/DELETE/etc.).
-* [ ] Normalize and validate URLs to avoid open proxy issues.
+- [ ] WebSocket support
+- [ ] gRPC support
+- [ ] Multi-region deployment
+- [ ] Configuration import/export
+- [ ] Dashboard UI (if needed)
 
----
+## 🐛 Known Issues
 
-## ✅ 4. **Resilience & State**
+- [ ] Session affinity cookies not implemented (IP-based only)
+- [ ] No persistent metrics storage (in-memory only)
+- [ ] Limited error reporting in admin API
 
-* [ ] Use Durable Object for:
+## 📝 Notes
 
-  * [ ] Persisting the backend list and round-robin pointer.
-  * [ ] Managing concurrent access to index.
-* [ ] Implement fallback strategy for overflow cases (e.g., if all backends are unreachable, but this is borderline devops).
-
----
-
-## ✅ 5. **Backend List Management**
-
-* [ ] Allow dynamic backend registration/removal (hot updates).
-* [ ] Support static configuration fallback.
-* [ ] Ensure order is deterministic and consistent across restarts.
-
----
-
-## ✅ 6. **Consistency Across Multiple Workers**
-
-* [ ] Route traffic for a given domain/path to the same Durable Object (e.g., via `.get(id)` keyed by hostname or route).
-* [ ] Ensure Durable Object doesn’t become a bottleneck (use per-route or per-user affinity when needed).
-
----
-
-## ✅ 7. **Timeouts & Retries (Logical Handling)**
-
-* [ ] Handle upstream timeouts gracefully and retry next backend (configurable max retry count).
-* [ ] Avoid retrying non-idempotent methods unless explicitly allowed.
-* [ ] Support configurable per-backend timeouts.
-
----
-
-## ✅ 8. **Observability Support**
-
-* [ ] Expose metadata in response headers for debugging (e.g., `X-Backend-Used`).
-* [ ] Optionally log request→backend mappings (ideally via queue or log stream to avoid blocking).
-
----
-
-## ✅ 9. **Graceful Failover**
-
-* [ ] If selected backend is down/unreachable, skip to the next (and preserve index state).
-* [ ] Track temporary backend failures (without health checks) using request failures.
+This is a minimal, production-ready load balancer focused on core functionality. The codebase has been significantly simplified by removing OAuth authentication, web interface, and complex configuration management in favor of a clean, maintainable API-first approach.
