@@ -8,8 +8,8 @@
 - [x] Durable Object state management
 - [x] Dynamic backend configuration
 - [x] Timeouts and retry logic
-- [x] Passive health checks
-- [x] Active health checks
+- [ ] Passive health checks
+- [ ] Active health checks
 - [x] Metrics collection and API
 - [x] Admin API endpoints
 

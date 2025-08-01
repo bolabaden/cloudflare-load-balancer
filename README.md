@@ -5,11 +5,9 @@ A minimal, high-performance load balancer built on Cloudflare Workers with Durab
 ## Features
 
 - **Simple Load Balancing**: Round-robin and weighted distribution across multiple backends
-- **Health Checks**: Passive health monitoring with automatic failover
 - **Retry Logic**: Configurable retry policies with exponential backoff
 - **Metrics**: Request tracking and performance monitoring
 - **API Management**: RESTful API for configuration and monitoring
-- **Scheduled Health Checks**: Automated health monitoring via cron triggers
 
 ## Architecture
 
@@ -39,7 +37,7 @@ hostname|backend1,backend2,backend3
 
 Example:
 ```
-aiostreams.bolabaden.org|https://backend1.example.com,https://backend2.example.com
+yourapp.example.com|https://backend1.example.com,https://backend2.example.com
 ```
 
 ## API Endpoints
@@ -49,12 +47,7 @@ aiostreams.bolabaden.org|https://backend1.example.com,https://backend2.example.c
 - `GET /admin/list` - List all configured services
 - `GET /admin/{service}/config` - Get service configuration
 - `GET /admin/{service}/backends` - Get backend status
-- `GET /admin/{service}/health` - Get health check results
 - `GET /admin/{service}/metrics` - Get service metrics
-
-### Health Check
-
-- `GET /health` - Service health status
 
 ## Development
 

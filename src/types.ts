@@ -5,7 +5,6 @@ export interface Backend {
 	url: string;
 	ip: string;
 	weight: number;
-	healthy: boolean;
 	lastFailureTimestamp?: number;
 	consecutiveFailures: number;
 	status?: string;
@@ -42,54 +41,34 @@ export interface LoadBalancer {
 	};
 }
 
-export interface PassiveHealthCheckConfig {
-	enabled: boolean;
-	max_failures: number;
-	failure_timeout_ms: number;
-	retryable_status_codes: number[];
-	monitor_timeout: number;
-}
-
-export interface ActiveHealthCheckConfig {
-	enabled: boolean;
-	type: 'http' | 'https' | 'tcp';
-	path: string;
-	method?: string;
-	timeout: number;
-	interval: number;
-	retries: number;
-	expected_codes?: number[];
-	expected_body?: string;
-	follow_redirects?: boolean;
-	consecutive_up: number;
-	consecutive_down: number;
-	headers?: { [key: string]: string };
-}
-
-export interface RetryPolicyConfig {
-	max_retries: number;
-	retry_timeout: number;
-	backoff_strategy: 'constant' | 'exponential';
-	base_delay: number;
-}
-
 export interface ObservabilityConfig {
 	responseHeaderName?: string;
 	add_backend_header?: boolean;
 }
 
+export interface SSLConfig {
+	skipCertificateVerification?: boolean;
+	allowSelfSignedCertificates?: boolean;
+	skipHostnameVerification?: boolean;
+}
+
+export interface DnsFirstConfig {
+	enabled: boolean;
+	timeoutMs: number;
+	failureStatusCodes: number[];
+	maxResponseTimeMs: number;
+}
+
 export interface LoadBalancerServiceConfig {
 	serviceId: string;
-	mode?: 'simple' | 'advanced';
 	simpleBackends?: string[];
 	pools: OriginPool[];
 	load_balancer: LoadBalancer;
 	currentRoundRobinIndex: number;
-	passiveHealthChecks: PassiveHealthCheckConfig;
-	activeHealthChecks: ActiveHealthCheckConfig;
-	retryPolicy: RetryPolicyConfig;
 	hostHeaderRewrite?: 'preserve' | 'backend_hostname' | string;
 	observability: ObservabilityConfig;
+	dnsFirst?: DnsFirstConfig;
+	ssl?: SSLConfig;
 }
 
 export interface BackendMetrics {
@@ -115,4 +94,14 @@ export interface ServiceMetrics {
 export interface StoredState {
 	config: LoadBalancerServiceConfig;
 	metrics?: ServiceMetrics;
-} 
+}
+
+// New types for JSON configuration format
+export interface ServiceConfig {
+	hostname: string;
+	backends: string[];
+}
+
+export interface LoadBalancerConfig {
+	services: ServiceConfig[];
+}

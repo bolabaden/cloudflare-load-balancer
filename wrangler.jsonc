@@ -4,9 +4,10 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "cloudflare-loadbalancer-worker",
+	"name": "flowbalance",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-06-05",
+	"compatibility_flags": ["nodejs_compat"],
 	"minify": true,
 	
 	"triggers": {
@@ -15,10 +16,10 @@
 
 	"migrations": [
 		{
-			"new_sqlite_classes": [
+			"tag": "v1",
+			"new_classes": [
 				"LoadBalancerDO"
-			],
-			"tag": "v1"
+			]
 		}
 	],
 
@@ -42,22 +43,22 @@
 
 	"vars": {
 		"API_SECRET": "bc0d037f84a54300811498e705716b6ed601f52209524a06b1eaa668904f60bc",
-		"DEBUG": "false",
-		"DEFAULT_BACKENDS": "aiostreams.bolabaden.org|https://aiostreams.bolabaden.duckdns.org,https://aiostreams-koyeb.bolabaden.org,https://aiostreams-render.bolabaden.org",
-		"ENVIRONMENT": "production"
+		"DEBUG": "true",
+		"DEFAULT_BACKENDS": "{\"services\":[{\"hostname\":\"(.+)\\\\.bolabaden\\\\.org\",\"backends\":[\"https://$1.micklethefickle.bolabaden.org\",\"https://$1.vractormania.bolabaden.org\",\"https://$1.beatapostapita.bolabaden.org\",\"https://$1.arnialtrashlid.bolabaden.org\",\"https://$1-koyeb.bolabaden.org\",\"https://$1-render.bolabaden.org\",\"https://$1-railway.bolabaden.org\",\"https://$1-flyio.bolabaden.org\",\"https://$1-vercel.bolabaden.org\"]}]}",
+		"DNS_FIRST": "true",
+		"DNS_FIRST_TIMEOUT_MS": "5000",
+		"DNS_FIRST_FAILURE_STATUS_CODES": "500,502,503,504,520,521,522,523,524,525,526,527",
+		"DNS_FIRST_MAX_RESPONSE_TIME_MS": "10000",
+		"SSL_SKIP_CERTIFICATE_VERIFICATION": "true",
+		"SSL_ALLOW_SELF_SIGNED_CERTIFICATES": "true",
+		"SSL_SKIP_HOSTNAME_VERIFICATION": "true",
+		"FORCE_ENV": "true"
 	},
 
 	"env": {
-		"dev": {
-			"name": "cloudflare-loadbalancer-worker-dev"
-		},
 		"production": {
-			"name": "cloudflare-loadbalancer-worker",
+			"name": "flowbalance",
 			"routes": [
-				{
-					"pattern": "aiostreams.bolabaden.org/*",
-					"zone_name": "bolabaden.org"
-				},
 				{
 					"pattern": "*.bolabaden.org/*",
 					"zone_name": "bolabaden.org"

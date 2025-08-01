@@ -1,4 +1,5 @@
 import { LoadBalancerDO } from "./durable-object";
+import { parseConfiguration, findMatchingService, expandWildcardBackends } from "./config-parser";
 
 export { LoadBalancerDO };
 
@@ -13,127 +14,47 @@ export default {
 			return handleAdminAPI(request, url, env);
 		}
 
-		// Health check endpoint
-		if (url.pathname === '/health') {
-			return new Response(JSON.stringify({ status: 'healthy', timestamp: Date.now() }), {
-				headers: { 'Content-Type': 'application/json' }
-			});
-		}
-
-		// All other requests -> Load Balancer (DO)
-		const serviceHost = hostname;
-		const doId = env.LOAD_BALANCER_DO.idFromName(serviceHost);
-		const stub = env.LOAD_BALANCER_DO.get(doId);
-		return stub.fetch(request);
-	},
-
-	async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-		if (env.DEFAULT_BACKENDS) {
-			const entries = env.DEFAULT_BACKENDS.split(',');
-			for (const entry of entries) {
-				const [hostname] = entry.split('|');
-				if (hostname) {
-					const trimmedHostname = hostname.trim();
-					try {
-						const doId = env.LOAD_BALANCER_DO.idFromName(trimmedHostname);
-						const stub = env.LOAD_BALANCER_DO.get(doId);
-						const healthCheckRequest = new Request('http://localhost/__lb_admin__/health-check', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' }
-						});
-						ctx.waitUntil(stub.fetch(healthCheckRequest));
-					} catch (error) {
-						console.error(`[Scheduled] Failed to trigger health check for ${trimmedHostname}:`, error);
-					}
-				}
-			}
-		}
-	},
-} satisfies ExportedHandler<Env>;
-
-async function handleAdminAPI(request: Request, url: URL, env: Env): Promise<Response> {
-	const pathAfter = url.pathname.slice('/admin/'.length);
-	const [serviceHost, ...ops] = pathAfter.split('/').filter(Boolean);
-	
-	// List all services
-	if (serviceHost === 'list' && request.method === 'GET') {
-		return handleListServices(env);
+		// Always use load balancer, but pass DNS-first flag
+		const dnsFirstEnabled = env.DNS_FIRST === 'true' || env.DNS_FIRST === '1';
+		return handleLoadBalancerFallback(request, env, ctx, hostname, dnsFirstEnabled ? 'DNS-first enabled' : 'Standard mode');
 	}
+};
+
+async function handleLoadBalancerFallback(
+	request: Request, 
+	env: Env, 
+	ctx: ExecutionContext, 
+	hostname: string, 
+	fallbackReason: string
+): Promise<Response> {
+	// Get or create the Durable Object instance
+	const id = env.LOAD_BALANCER_DO.idFromName(hostname);
+	const durableObject = env.LOAD_BALANCER_DO.get(id);
 	
-	if (!serviceHost || ops.length === 0) {
-		return new Response(JSON.stringify({ error: 'Invalid API path' }), { 
-			status: 400, 
-			headers: { 'Content-Type': 'application/json' } 
-		});
-	}
-
-	// Route to DO
-	const operation = ops.join('/');
-	const doUrl = new URL(request.url);
-	doUrl.pathname = `/__lb_admin__/${operation}`;
-	const doRequest = new Request(doUrl.toString(), request);
-
-	const doId = env.LOAD_BALANCER_DO.idFromName(serviceHost);
-	const stub = env.LOAD_BALANCER_DO.get(doId);
-	return stub.fetch(doRequest);
+	// Add DNS-first flag to the request
+	const dnsFirstEnabled = env.DNS_FIRST === 'true' || env.DNS_FIRST === '1';
+	const modifiedRequest = new Request(request.url, {
+		method: request.method,
+		headers: {
+			...Object.fromEntries(request.headers.entries()),
+			'X-DNS-First-Enabled': dnsFirstEnabled ? 'true' : 'false',
+			'X-Fallback-Reason': fallbackReason
+		},
+		body: request.body
+	});
+	
+	return durableObject.fetch(modifiedRequest);
 }
 
-async function handleListServices(env: Env): Promise<Response> {
-	try {
-		const services: Record<string, any> = {};
-		
-		if (env.DEFAULT_BACKENDS) {
-			const defaultBackends = env.DEFAULT_BACKENDS.split(',');
-			for (const backendEntry of defaultBackends) {
-				const [hostname, ...urls] = backendEntry.split('|');
-				if (hostname && urls.length > 0) {
-					const cleanHostname = hostname.trim();
-					const cleanUrls = urls.map(url => url.trim());
-					
-					services[cleanHostname] = {
-						mode: 'simple',
-						backends: cleanUrls,
-						source: 'default',
-						hostname: cleanHostname,
-						backendCount: cleanUrls.length,
-						status: 'active'
-					};
-					
-					// Try to get actual metrics from the DO
-					try {
-						const doId = env.LOAD_BALANCER_DO.idFromName(cleanHostname);
-						const stub = env.LOAD_BALANCER_DO.get(doId);
-						const metricsRequest = new Request('https://dummy/__lb_admin__/metrics', {
-							method: 'GET'
-						});
-						const metricsResponse = await stub.fetch(metricsRequest);
-						
-						if (metricsResponse.ok) {
-							const metrics = await metricsResponse.json();
-							services[cleanHostname].metrics = metrics;
-							services[cleanHostname].hasLiveData = true;
-						}
-					} catch (error) {
-						services[cleanHostname].hasLiveData = false;
-					}
-				}
-			}
-		}
-		
-		return new Response(JSON.stringify({ 
-			services,
-			count: Object.keys(services).length,
-			timestamp: new Date().toISOString()
-		}), {
-			headers: { 'Content-Type': 'application/json' }
-		});
-	} catch (error) {
-		return new Response(JSON.stringify({ 
-			error: 'Failed to list services',
-			details: error instanceof Error ? error.message : 'Unknown error'
-		}), { 
-			status: 500, 
-			headers: { 'Content-Type': 'application/json' } 
-		});
+async function handleAdminAPI(request: Request, url: URL, env: Env): Promise<Response> {
+	const path = url.pathname;
+	
+	if (path === '/admin/config') {
+		// Return the current configuration
+		const id = env.LOAD_BALANCER_DO.idFromName('admin');
+		const durableObject = env.LOAD_BALANCER_DO.get(id);
+		return durableObject.fetch(request);
 	}
+	
+	return new Response('Not found', { status: 404 });
 }
